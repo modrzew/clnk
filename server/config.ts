@@ -18,7 +18,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     // No auth yet and Pi can run commands, so only listen on loopback unless told otherwise.
     host: env.HOST || "127.0.0.1",
     port: Number(env.PORT || 8787),
-    dataDir: resolve(env.CLNK_DATA_DIR || join(dataHome, "clnk")),
+    dataDir: resolve(env.DATA_DIR || join(dataHome, "clnk")),
     webDir: existsSync(join(webDir, "index.html")) ? webDir : null,
   };
 }

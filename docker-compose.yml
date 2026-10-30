@@ -1,0 +1,17 @@
+services:
+  clnk:
+    image: ghcr.io/modrzew/clnk:${TAG:-latest}
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${LISTEN_ADDR:-127.0.0.1}:${LISTEN_PORT:-8787}:8787"
+    volumes:
+      # Database, transcripts and chat folders.
+      - data:/data
+      # Pi config: models.json, auth.json, settings.json, MCP, extensions.
+      - ./pi-agent:/home/bun/.pi/agent
+
+volumes:
+  data:
+  pi-agent:
