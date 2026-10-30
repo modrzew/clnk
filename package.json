@@ -6,12 +6,11 @@
   "packageManager": "bun@1.4.4",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "cmk && tsc && vite build",
     "preview": "vite preview",
     "server": "bun server/index.ts",
     "server:dev": "bun --watch server/index.ts",
-    "typecheck": "bun run css-types --check && tsc && tsc -p server && tsc -p tsconfig.node.json --noEmit",
-    "css-types": "bun scripts/css-types.ts",
+    "typecheck": "cmk && tsc && tsc -p server && tsc -p tsconfig.node.json --noEmit",
     "lint": "eslint --max-warnings 0 .",
     "test": "bun test",
     "tauri": "tauri",
@@ -28,6 +27,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@css-modules-kit/codegen": "^1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
     "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2",
@@ -38,7 +38,6 @@
     "eslint": "^10.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
-    "lightningcss": "^1.33.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1",
     "vite": "^8.0.16"

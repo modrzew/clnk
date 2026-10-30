@@ -18,8 +18,12 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* CSS module types, generated into generated/ by css-modules-kit (`cmk`) */
+    "rootDirs": [".", "generated"]
   },
+  "cmkOptions": { "enabled": true },
   "include": ["src", "shared"],
   "exclude": ["**/*.test.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]

@@ -8,7 +8,6 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 COPY index.html vite.config.ts tsconfig.json tsconfig.node.json ./
-COPY scripts scripts
 COPY public public
 COPY shared shared
 COPY src src

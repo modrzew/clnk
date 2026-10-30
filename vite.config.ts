@@ -1,36 +1,35 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import process from "node:process";
-import { isCssModule, updateCssTypes } from "./scripts/css-types.ts";
+import { spawn, type ChildProcess } from "node:child_process";
+import { join } from "node:path";
 
 const host = process.env.TAURI_DEV_HOST;
 
-/** Keeps the CSS module types current as the CSS changes (see scripts/css-types.ts). */
-function cssTypes(): Plugin {
+/** Keeps the CSS module types in generated/ current while the dev server runs. */
+function cssModuleTypes(): Plugin {
+  let cmk: ChildProcess | undefined;
   return {
-    name: "clnk:css-types",
+    name: "clnk:css-module-types",
     apply: "serve",
     configureServer(server) {
-      const update = (path: string) => {
-        if (!isCssModule(path)) return;
-        try {
-          if (updateCssTypes(path))
-            server.config.logger.info(`CSS module types updated: ${path}`);
-        } catch (err) {
-          server.config.logger.warn(`CSS module types: ${String(err)}`);
-        }
-      };
-      server.watcher
-        .on("add", update)
-        .on("change", update)
-        .on("unlink", update);
+      const { root } = server.config;
+      // Its errors go to stderr; stdout only has a status line after every change.
+      cmk = spawn(
+        join(root, "node_modules/.bin/cmk"),
+        ["--watch", "--preserveWatchOutput"],
+        { cwd: root, stdio: ["ignore", "ignore", "inherit"] },
+      );
+    },
+    closeBundle() {
+      cmk?.kill();
     },
   };
 }
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-  plugins: [react(), cssTypes()],
+  plugins: [react(), cssModuleTypes()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
