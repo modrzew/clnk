@@ -1,11 +1,4 @@
-import {
-  memo,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   AssistantMessage,
   ChatMessage,
@@ -180,11 +173,8 @@ function Thinking({
   active: boolean;
 }) {
   // Open while it streams, then collapse, unless the user has toggled it.
-  const [open, setOpen] = useState(active);
-  const [touched, setTouched] = useState(false);
-  useEffect(() => {
-    if (!touched) setOpen(active);
-  }, [active, touched]);
+  const [toggled, setToggled] = useState<boolean | null>(null);
+  const open = toggled ?? active;
 
   const text = block.thinking.trim();
   if (!text && !active) return null;
@@ -194,10 +184,7 @@ function Thinking({
         type="button"
         className="thinking-toggle"
         aria-expanded={open}
-        onClick={() => {
-          setTouched(true);
-          setOpen(!open);
-        }}
+        onClick={() => setToggled(!open)}
       >
         {active
           ? "Thinking…"

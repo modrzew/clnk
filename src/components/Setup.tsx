@@ -29,7 +29,7 @@ export function Setup({ initialUrl, onConnect, onCancel }: SetupProps) {
 
   return (
     <div className="setup">
-      <form className="setup-card" onSubmit={submit}>
+      <form className="setup-card" onSubmit={(event) => void submit(event)}>
         <h1>clnk</h1>
         <p>Enter the address of the backend that runs Pi.</p>
         <input

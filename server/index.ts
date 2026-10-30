@@ -5,7 +5,7 @@ import { createPiHost } from "./pi";
 const config = loadConfig();
 const app = startApp({ config, pi: await createPiHost() });
 
-console.log(`clnk backend listening on ${app.url}`);
+console.log(`clnk backend listening on ${app.url.href}`);
 console.log(`Data: ${config.dataDir}`);
 console.log(
   config.webDir ? `Web UI: ${config.webDir}` : "Web UI not built; API only.",
@@ -18,5 +18,5 @@ async function shutdown() {
   await app.stop();
   process.exit(0);
 }
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());

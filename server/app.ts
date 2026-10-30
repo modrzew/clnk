@@ -137,7 +137,7 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
       message(ws, raw) {
         let msg: ClientMessage;
         try {
-          msg = JSON.parse(String(raw));
+          msg = JSON.parse(String(raw)) as ClientMessage;
         } catch {
           return send(ws, { type: "error", error: "Invalid JSON" });
         }

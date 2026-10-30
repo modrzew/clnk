@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      branch:
+        description: Branch to release from
+        type: string
+        default: main
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Pick the next version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUMP: ${{ inputs.bump }}
+        run: |
+          tags=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1000 --json tagName --jq '.[].tagName')
+          latest=$(printf '%s\n' "$tags" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+          IFS=. read -r major minor patch <<< "${latest:-v0.0.0}"
+          major=${major#v}
+          case "$BUMP" in
+            major) version="$((major + 1)).0.0" ;;
+            minor) version="$major.$((minor + 1)).0" ;;
+            patch) version="$major.$minor.$((patch + 1))" ;;
+            *) echo "::error::Unknown bump: $BUMP"; exit 1 ;;
+          esac
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "::error::Tag v$version already exists"
+            exit 1
+          fi
+          echo "${latest:-No release yet} -> v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set the version in the code
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sed -i -E '0,/"version": "[^"]*"/s//"version": "'"$VERSION"'"/' package.json src-tauri/tauri.conf.json
+          sed -i -E '0,/^version = "[^"]*"/s//version = "'"$VERSION"'"/' src-tauri/Cargo.toml
+          test "$(jq -r .version package.json)" = "$VERSION"
+          test "$(jq -r .version src-tauri/tauri.conf.json)" = "$VERSION"
+          grep -qx "version = \"$VERSION\"" src-tauri/Cargo.toml
+          git diff
+
+      - name: Commit, tag and push
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Nothing to commit when the code already has this version.
+          git diff --quiet || git commit -am "Release $TAG"
+          git tag -a "$TAG" -m "$TAG"
+          git push --atomic origin "HEAD:refs/heads/$BRANCH" "refs/tags/$TAG"
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+
+  # Releases made with GITHUB_TOKEN don't trigger other workflows, so the image is built from here.
+  docker:
+    needs: release
+    uses: ./.github/workflows/docker.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    permissions:
+      contents: read
+      packages: write

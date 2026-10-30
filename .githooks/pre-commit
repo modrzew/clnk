@@ -1,0 +1,9 @@
+#!/bin/sh
+# Enabled by `bun install` (the prepare script). Skip once with `git commit --no-verify`.
+set -e
+
+# Formats staged files and re-stages them. Refuses files with unstaged changes too.
+bun fmt --staged
+bun run lint
+bun run typecheck
+bun test

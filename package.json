@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "bun@1.4.4",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -10,8 +11,10 @@
     "server": "bun server/index.ts",
     "server:dev": "bun --watch server/index.ts",
     "typecheck": "tsc && tsc -p server",
+    "lint": "eslint --max-warnings 0 .",
     "test": "bun test",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.4.0",
@@ -24,12 +27,17 @@
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.4.0",
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2",
     "@types/bun": "^1.4.4",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.2",
+    "eslint": "^10.13.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
     "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
     "vite": "^8.0.16"
   }
 }

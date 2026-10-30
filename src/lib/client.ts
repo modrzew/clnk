@@ -2,6 +2,7 @@ import type {
   ClientMessage,
   CreateChatRequest,
   CreateChatResponse,
+  ErrorResponse,
   HealthResponse,
   ModelsResponse,
   ServerMessage,
@@ -87,9 +88,12 @@ export class BackendClient {
       ...init,
       headers: { "Content-Type": "application/json", ...init?.headers },
     });
-    const body = await response.json().catch(() => null);
+    const body: unknown = await response.json().catch(() => null);
     if (!response.ok)
-      throw new Error(body?.error ?? `Request failed (${response.status})`);
+      throw new Error(
+        (body as ErrorResponse | null)?.error ??
+          `Request failed (${response.status})`,
+      );
     return body as T;
   }
 
@@ -164,7 +168,7 @@ export async function checkBackend(baseUrl: string): Promise<void> {
   let health: HealthResponse | null = null;
   try {
     const response = await fetch(`${baseUrl}/api/health`);
-    health = await response.json();
+    health = (await response.json()) as HealthResponse;
   } catch {}
   if (health?.name !== "clnk")
     throw new Error(`Couldn't reach a clnk backend at ${baseUrl}`);

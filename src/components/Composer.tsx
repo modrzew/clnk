@@ -61,12 +61,12 @@ export function Composer({
       !isTouch()
     ) {
       event.preventDefault();
-      submit();
+      void submit();
     }
   }
 
   return (
-    <form className="composer" onSubmit={submit}>
+    <form className="composer" onSubmit={(event) => void submit(event)}>
       {error && <div className="composer-error">{error}</div>}
       <div className="composer-box">
         <textarea
