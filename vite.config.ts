@@ -25,8 +25,15 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri` and the backend
+      ignored: ["**/src-tauri/**", "**/server/**"],
+    },
+    // Forward API calls to the backend so the dev server can be used as the backend URL.
+    proxy: {
+      "/api": {
+        target: process.env.CLNK_BACKEND || "http://127.0.0.1:8787",
+        ws: true,
+      },
     },
   },
 }));
