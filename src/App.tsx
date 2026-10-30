@@ -1,3 +1,4 @@
+import { isTauri } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import { ChatView } from "./components/ChatView";
 import { NewChat } from "./components/NewChat";
@@ -20,9 +21,12 @@ import styles from "./App.module.css";
 
 const BACKEND_URL_KEY = "clnk.backendUrl";
 
-/** Served over http(s), the page most likely came from the backend itself (or the dev proxy). */
+/**
+ * Served over http(s), the page most likely came from the backend itself (or the dev proxy). The apps
+ * serve their own, over http on Android.
+ */
 function suggestedBackendUrl() {
-  return window.location.protocol.startsWith("http")
+  return window.location.protocol.startsWith("http") && !isTauri()
     ? window.location.origin
     : "";
 }

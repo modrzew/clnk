@@ -1,0 +1,93 @@
+name: Apps
+
+on:
+  # Releases published by hand. The release workflow calls this directly instead.
+  release:
+    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build, e.g. v1.2.3
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # Apple Silicon only. Ad-hoc signed, not notarized.
+  macos:
+    runs-on: macos-latest
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: bun install --frozen-lockfile
+      - run: bun tauri build --target aarch64-apple-darwin --bundles dmg
+
+      - name: Attach the .dmg to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg --clobber
+
+  # 64-bit ARM only, which is what current phones run.
+  android:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: bun install --frozen-lockfile
+
+      # The runner comes with the Android SDK and NDKs. Gradle installs the SDK platform it needs.
+      - name: Build the APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::The ANDROID_KEYSTORE_BASE64 secret is missing, so the APK can't be signed"
+            exit 1
+          fi
+          # The runner empties its temp folder after the job.
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release.keystore"
+          base64 -d <<< "$KEYSTORE_BASE64" > "$ANDROID_KEYSTORE_PATH"
+          NDK_HOME="$ANDROID_NDK_LATEST_HOME" bun tauri android build --apk --target aarch64
+
+      - name: Attach the .apk to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk="clnk_${TAG#v}_aarch64.apk"
+          mv src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "$apk"
+          "$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)/apksigner" verify "$apk"
+          gh release upload "$TAG" "$apk" --clobber

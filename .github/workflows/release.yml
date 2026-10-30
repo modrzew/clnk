@@ -89,3 +89,13 @@ jobs:
     permissions:
       contents: read
       packages: write
+
+  apps:
+    needs: release
+    uses: ./.github/workflows/apps.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    # For the Android signing key.
+    secrets: inherit
+    permissions:
+      contents: write

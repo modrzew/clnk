@@ -1,3 +1,4 @@
+import { isTauri } from "@tauri-apps/api/core";
 import { type DragEvent, useId, useRef, useState } from "react";
 import { LuFile, LuTrash2, LuUpload } from "react-icons/lu";
 import type { ProjectSummary } from "../../shared/protocol";
@@ -142,6 +143,8 @@ export function Artefacts({
               className={styles.name}
               href={client.artefactUrl(project.id, artefact.name)}
               download={artefact.name}
+              // The apps' webviews don't download files. Links with a target open in the browser instead.
+              target={isTauri() ? "_blank" : undefined}
               title={`Download ${artefact.name}`}
             >
               {artefact.name}

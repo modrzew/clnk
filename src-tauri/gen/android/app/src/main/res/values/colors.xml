@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The page background from src/global.css, shown behind the system bars. -->
+    <color name="background">#FFFBFBFA</color>
+</resources>
