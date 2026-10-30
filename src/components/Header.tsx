@@ -1,13 +1,14 @@
-import type { ModelRef } from "../../shared/protocol";
+import type { ReactNode } from "react";
 
 interface HeaderProps {
   title: string;
-  model?: ModelRef;
   running?: boolean;
   onMenu: () => void;
+  /** Buttons at the end of the header. */
+  children?: ReactNode;
 }
 
-export function Header({ title, model, running, onMenu }: HeaderProps) {
+export function Header({ title, running, onMenu, children }: HeaderProps) {
   return (
     <header className="header">
       <button
@@ -20,11 +21,7 @@ export function Header({ title, model, running, onMenu }: HeaderProps) {
       </button>
       <h1 className="header-title">{title}</h1>
       {running && <span className="spinner" aria-label="Running" />}
-      {model && (
-        <span className="model-chip" title={`${model.provider}/${model.id}`}>
-          {model.id}
-        </span>
-      )}
+      {children}
     </header>
   );
 }

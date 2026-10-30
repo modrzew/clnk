@@ -11,6 +11,8 @@ const chat: ChatSummary = {
   title: "Hi",
   model: { provider: "p", id: "m" },
   status: "running",
+  archived: false,
+  context: null,
   createdAt: 0,
   updatedAt: 0,
 };
@@ -24,6 +26,16 @@ const partial: AssistantMessage = {
   timestamp: 1,
 };
 
+const snapshot: ServerMessage = {
+  type: "snapshot",
+  chat,
+  messages: [],
+  streaming: null,
+  toolOutput: {},
+  queued: [],
+  activity: null,
+};
+
 function apply(...messages: ServerMessage[]): TranscriptState {
   return messages.reduce(applyServerMessage, emptyTranscript);
 }
@@ -32,22 +44,24 @@ describe("applyServerMessage", () => {
   test("a snapshot replaces the transcript", () => {
     const before = apply({ type: "run_error", chatId: "c1", error: "boom" });
     const state = applyServerMessage(before, {
-      type: "snapshot",
-      chat,
+      ...snapshot,
       messages: [{ role: "user", content: "hi", timestamp: 0 }],
-      streaming: null,
+      queued: ["steer"],
     });
     expect(state).toEqual({
       loaded: true,
       messages: [{ role: "user", content: "hi", timestamp: 0 }],
       streaming: null,
+      toolOutput: {},
+      queued: ["steer"],
+      activity: null,
       error: null,
     });
   });
 
   test("builds the streaming message from blocks and deltas", () => {
     const state = apply(
-      { type: "snapshot", chat, messages: [], streaming: null },
+      snapshot,
       { type: "stream_start", chatId: "c1", message: partial },
       {
         type: "stream_block",
@@ -142,5 +156,56 @@ describe("applyServerMessage", () => {
       message: { role: "user", content: "again", timestamp: 3 },
     });
     expect(state.error).toBeNull();
+  });
+
+  test("collects the output of running tools until their result arrives", () => {
+    const output = (
+      text: string,
+      append: boolean,
+      toolCallId = "t1",
+    ): ServerMessage => ({
+      type: "tool_output",
+      chatId: "c1",
+      toolCallId,
+      text,
+      append,
+    });
+    let state = apply(
+      output("one\n", true),
+      output("two\n", true),
+      output("x", true, "t2"),
+    );
+    expect(state.toolOutput).toEqual({ t1: "one\ntwo\n", t2: "x" });
+    state = apply(output("three\n", false));
+    expect(state.toolOutput).toEqual({ t1: "three\n" });
+
+    state = applyServerMessage(state, {
+      type: "message",
+      chatId: "c1",
+      message: {
+        role: "toolResult",
+        toolCallId: "t1",
+        toolName: "bash",
+        content: [{ type: "text", text: "three\n" }],
+        isError: false,
+        timestamp: 2,
+      },
+    });
+    expect(state.toolOutput).toEqual({});
+  });
+
+  test("tracks queued steering messages and activity", () => {
+    let state = apply(
+      { type: "queue", chatId: "c1", queued: ["a", "b"] },
+      { type: "activity", chatId: "c1", activity: "Compacting context…" },
+    );
+    expect(state.queued).toEqual(["a", "b"]);
+    expect(state.activity).toBe("Compacting context…");
+    state = applyServerMessage(state, {
+      type: "run_error",
+      chatId: "c1",
+      error: "boom",
+    });
+    expect(state.activity).toBeNull();
   });
 });

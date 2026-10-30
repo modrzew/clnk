@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { AssistantContent, ServerMessage } from "../shared/protocol";
 import { applyServerMessage, emptyTranscript } from "../shared/transcript";
-import { streamMessage } from "./stream";
+import { streamMessage, toolOutputMessage } from "./stream";
 
 /** Pi's partial message after the provider has parsed further than the event being delivered. */
 function partial(...content: AssistantContent[]) {
@@ -91,4 +91,35 @@ test("ignores events that aren't part of a streaming assistant message", () => {
     } as never),
   ).toBeNull();
   expect(streamMessage("c1", { type: "agent_start" } as never)).toBeNull();
+});
+
+test("sends only the new part of a running tool's output", () => {
+  const update = (text: string, parentToolCallId?: string) =>
+    ({
+      type: "tool_execution_update",
+      toolCallId: "t1",
+      toolName: "bash",
+      args: {},
+      partialResult: { content: [{ type: "text", text }] },
+      parentToolCallId,
+    }) as never;
+
+  expect(toolOutputMessage("c1", update("one\n"))).toEqual({
+    type: "tool_output",
+    chatId: "c1",
+    toolCallId: "t1",
+    text: "one\n",
+    append: true,
+  });
+  expect(toolOutputMessage("c1", update("one\ntwo\n"), "one\n")).toMatchObject({
+    text: "two\n",
+    append: true,
+  });
+  // Truncated output no longer extends what was sent, so it replaces it.
+  expect(toolOutputMessage("c1", update("two\n"), "one\ntwo\n")).toMatchObject({
+    text: "two\n",
+    append: false,
+  });
+  expect(toolOutputMessage("c1", update("two\n"), "two\n")).toBeNull();
+  expect(toolOutputMessage("c1", update("nested", "t0"))).toBeNull();
 });

@@ -1,5 +1,9 @@
 import { useEffect, useReducer, useState, useSyncExternalStore } from "react";
-import type { ChatSummary, ServerMessage } from "../../shared/protocol";
+import type {
+  ChatSummary,
+  ModelsResponse,
+  ServerMessage,
+} from "../../shared/protocol";
 import {
   applyServerMessage,
   emptyTranscript,
@@ -29,10 +33,38 @@ export function useChats(client: BackendClient): ChatSummary[] | null {
               sortChats([chat, ...prev.filter((c) => c.id !== chat.id)]),
           );
         }
+        if (msg.type === "chat_deleted")
+          setChats((prev) => prev && prev.filter((c) => c.id !== msg.chatId));
       }),
     [client],
   );
   return chats;
+}
+
+export interface Models {
+  models: ModelsResponse | null;
+  error: string | null;
+}
+
+/** The backend's models, fetched again whenever the connection opens in case its Pi config changed. */
+export function useModels(client: BackendClient): Models {
+  const connection = useConnectionStatus(client);
+  const [state, setState] = useState<Models>({ models: null, error: null });
+  useEffect(() => {
+    if (connection !== "open") return;
+    let cancelled = false;
+    client
+      .getModels()
+      .then((models) => !cancelled && setState({ models, error: null }))
+      .catch(
+        (err: Error) =>
+          !cancelled && setState((prev) => ({ ...prev, error: err.message })),
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, [client, connection]);
+  return state;
 }
 
 function sortChats(chats: ChatSummary[]) {

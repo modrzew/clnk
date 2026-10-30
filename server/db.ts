@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import type { ModelRef } from "../shared/protocol";
+import type { ContextUsage, ModelRef } from "../shared/protocol";
 
 /** Until there is a login flow, every request acts as this user. */
 export const DEFAULT_USER_ID = "default";
@@ -11,6 +11,8 @@ export interface ChatRow {
   model: ModelRef;
   /** Pi JSONL transcript, relative to the data dir. Null until the chat's Pi session is first opened. */
   sessionFile: string | null;
+  archivedAt: number | null;
+  context: ContextUsage | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -22,6 +24,10 @@ interface RawChatRow {
   model_provider: string;
   model_id: string;
   session_file: string | null;
+  archived_at: number | null;
+  context_tokens: number | null;
+  /** Null when the context usage is unknown altogether. */
+  context_window: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -43,6 +49,9 @@ const MIGRATIONS = [
     updated_at INTEGER NOT NULL
   );
   CREATE INDEX chats_user_updated ON chats (user_id, updated_at DESC);`,
+  `ALTER TABLE chats ADD COLUMN archived_at INTEGER;
+  ALTER TABLE chats ADD COLUMN context_tokens INTEGER;
+  ALTER TABLE chats ADD COLUMN context_window INTEGER;`,
 ];
 
 export class Db {
@@ -95,8 +104,9 @@ export class Db {
   insertChat(chat: ChatRow) {
     this.db
       .query(
-        `INSERT INTO chats (id, user_id, title, model_provider, model_id, session_file, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO chats (id, user_id, title, model_provider, model_id, session_file, archived_at,
+           context_tokens, context_window, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         chat.id,
@@ -105,6 +115,9 @@ export class Db {
         chat.model.provider,
         chat.model.id,
         chat.sessionFile,
+        chat.archivedAt,
+        chat.context?.tokens ?? null,
+        chat.context?.contextWindow ?? null,
         chat.createdAt,
         chat.updatedAt,
       );
@@ -112,6 +125,26 @@ export class Db {
 
   setTitle(chatId: string, title: string) {
     this.db.query("UPDATE chats SET title = ? WHERE id = ?").run(title, chatId);
+  }
+
+  setModel(chatId: string, model: ModelRef) {
+    this.db
+      .query("UPDATE chats SET model_provider = ?, model_id = ? WHERE id = ?")
+      .run(model.provider, model.id, chatId);
+  }
+
+  setArchived(chatId: string, archivedAt: number | null) {
+    this.db
+      .query("UPDATE chats SET archived_at = ? WHERE id = ?")
+      .run(archivedAt, chatId);
+  }
+
+  setContext(chatId: string, context: ContextUsage | null) {
+    this.db
+      .query(
+        "UPDATE chats SET context_tokens = ?, context_window = ? WHERE id = ?",
+      )
+      .run(context?.tokens ?? null, context?.contextWindow ?? null, chatId);
   }
 
   setSessionFile(chatId: string, sessionFile: string) {
@@ -142,6 +175,11 @@ function toChatRow(row: RawChatRow): ChatRow {
     title: row.title,
     model: { provider: row.model_provider, id: row.model_id },
     sessionFile: row.session_file,
+    archivedAt: row.archived_at,
+    context:
+      row.context_window === null
+        ? null
+        : { tokens: row.context_tokens, contextWindow: row.context_window },
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

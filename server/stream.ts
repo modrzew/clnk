@@ -73,3 +73,36 @@ export function streamMessage(
       return null;
   }
 }
+
+/**
+ * Converts a tool's progress update into a tool_output message. Tools like bash report all their output
+ * so far on every update, so when it extends the output clients already have, only the new part is sent.
+ */
+export function toolOutputMessage(
+  chatId: string,
+  event: Extract<AgentSessionEvent, { type: "tool_execution_update" }>,
+  previous = "",
+): ServerMessage | null {
+  // Calls that tools make themselves (e.g. from codemode) aren't in the transcript.
+  if (event.parentToolCallId) return null;
+  const text = resultText(event.partialResult);
+  if (text === null || text === previous) return null;
+  const append = text.startsWith(previous);
+  return {
+    type: "tool_output",
+    chatId,
+    toolCallId: event.toolCallId,
+    text: append ? text.slice(previous.length) : text,
+    append,
+  };
+}
+
+function resultText(result: unknown): string | null {
+  const content = (result as { content?: unknown } | null)?.content;
+  if (!Array.isArray(content)) return null;
+  return (content as { type?: unknown; text?: unknown }[])
+    .flatMap((part) =>
+      part.type === "text" && typeof part.text === "string" ? [part.text] : [],
+    )
+    .join("\n");
+}

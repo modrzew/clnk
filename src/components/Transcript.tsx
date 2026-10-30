@@ -1,25 +1,42 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  memo,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   AssistantMessage,
   ChatMessage,
+  CompactionMarker,
   ImageContent,
   TextContent,
   ThinkingContent,
-  ToolCall,
   ToolResultMessage,
+  UserMessage,
 } from "../../shared/protocol";
+import type { TranscriptState } from "../../shared/transcript";
+import { useExpandable } from "../lib/prefs";
 import { Markdown } from "./Markdown";
+import { ToolCallView } from "./ToolCall";
+
+/** Edits (with `message`) or retries the user message with the given timestamp. */
+export type Rewind = (timestamp: number, message?: string) => Promise<void>;
 
 interface TranscriptProps {
-  messages: ChatMessage[];
-  streaming: AssistantMessage | null;
+  transcript: TranscriptState;
   running: boolean;
+  /** Set when messages can be edited and retried. */
+  onRewind?: Rewind;
 }
 
 /** Distance from the bottom within which new content keeps the view scrolled to the end. */
 const STICK_THRESHOLD_PX = 80;
+const NO_OUTPUT: Record<string, string> = {};
 
-export function Transcript({ messages, streaming, running }: TranscriptProps) {
+export function Transcript({ transcript, running, onRewind }: TranscriptProps) {
+  const { messages, streaming, toolOutput, queued, activity } = transcript;
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const results = useMemo(() => {
@@ -32,7 +49,7 @@ export function Transcript({ messages, streaming, running }: TranscriptProps) {
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [messages, streaming, running]);
+  }, [transcript, running]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -41,30 +58,46 @@ export function Transcript({ messages, streaming, running }: TranscriptProps) {
         el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;
   };
 
+  const lastUser = lastUserMessage(messages);
   const waiting = running && !streaming;
   return (
     <div className="transcript" ref={scrollRef} onScroll={onScroll}>
       <div className="transcript-inner">
         {messages.map((message, index) => (
           <MessageView
-            key={index}
+            key={`${index}:${message.timestamp}`}
             message={message}
             results={results}
+            // Only messages with tool calls still waiting for results re-render as output streams.
+            toolOutput={
+              hasPendingCalls(message, results) ? toolOutput : NO_OUTPUT
+            }
             running={running}
+            onRewind={onRewind}
           />
         ))}
         {streaming && (
           <AssistantView
             message={streaming}
             results={results}
+            toolOutput={toolOutput}
             running
             streaming
           />
         )}
-        {waiting && (
-          <div className="working" aria-live="polite">
-            <span className="spinner" /> Pi is working…
+        {queued.map((text, index) => (
+          <div key={index} className="msg msg-user queued">
+            <div className="bubble">{text}</div>
+            <div className="msg-note">Pi reads this after its current step</div>
           </div>
+        ))}
+        {(waiting || activity) && (
+          <div className="working" aria-live="polite">
+            <span className="spinner" /> {activity ?? "Pi is working…"}
+          </div>
+        )}
+        {onRewind && lastUser && (
+          <RetryButton onRetry={() => onRewind(lastUser.timestamp)} />
         )}
       </div>
     </div>
@@ -74,24 +107,29 @@ export function Transcript({ messages, streaming, running }: TranscriptProps) {
 interface MessageViewProps {
   message: ChatMessage;
   results: Map<string, ToolResultMessage>;
+  toolOutput: Record<string, string>;
   running: boolean;
+  onRewind?: Rewind;
 }
 
 const MessageView = memo(function MessageView({
   message,
   results,
+  toolOutput,
   running,
+  onRewind,
 }: MessageViewProps) {
   switch (message.role) {
     case "user":
-      return (
-        <div className="msg msg-user">
-          <div className="bubble">{contentText(message.content)}</div>
-        </div>
-      );
+      return <UserMessageView message={message} onRewind={onRewind} />;
     case "assistant":
       return (
-        <AssistantView message={message} results={results} running={running} />
+        <AssistantView
+          message={message}
+          results={results}
+          toolOutput={toolOutput}
+          running={running}
+        />
       );
     case "custom":
       return (
@@ -100,16 +138,164 @@ const MessageView = memo(function MessageView({
         </div>
       );
     case "compaction":
-      return <div className="msg-divider">Context compacted</div>;
+      return <CompactionView marker={message} />;
     default:
       // Tool results are shown on their tool call line.
       return null;
   }
 });
 
+function UserMessageView({
+  message,
+  onRewind,
+}: {
+  message: UserMessage;
+  onRewind?: Rewind;
+}) {
+  const [editing, setEditing] = useState(false);
+  const text = contentText(message.content);
+  if (editing)
+    return (
+      <EditMessage
+        initial={text}
+        onCancel={() => setEditing(false)}
+        onSave={
+          onRewind &&
+          (async (edited) => {
+            await onRewind(message.timestamp, edited);
+            setEditing(false);
+          })
+        }
+      />
+    );
+  return (
+    <div className="msg msg-user">
+      <div className="bubble">{text}</div>
+      {onRewind && (
+        <div className="msg-actions">
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => setEditing(true)}
+          >
+            Edit
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EditMessage({
+  initial,
+  onCancel,
+  onSave,
+}: {
+  initial: string;
+  onCancel: () => void;
+  /** Unset while the message can't be edited, e.g. because Pi started running. */
+  onSave?: (text: string) => Promise<void>;
+}) {
+  const [text, setText] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
+
+  const canSave = onSave !== undefined && text.trim().length > 0 && !saving;
+
+  async function save() {
+    if (!canSave) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(text);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setSaving(false);
+    }
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+    } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      void save();
+    }
+  }
+
+  return (
+    <div className="msg msg-user">
+      <div className="edit-box">
+        <textarea
+          ref={inputRef}
+          value={text}
+          autoFocus
+          aria-label="Edit message"
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={onKeyDown}
+        />
+        {error && <div className="composer-error">{error}</div>}
+        <div className="edit-actions">
+          <span className="edit-hint">
+            {onSave
+              ? "Pi answers again from here; later messages are replaced."
+              : "Wait for Pi to finish to send this."}
+          </span>
+          <button type="button" className="button secondary" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="button"
+            disabled={!canSave}
+            onClick={() => void save()}
+          >
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RetryButton({ onRetry }: { onRetry: () => Promise<void> }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="retry">
+      <button
+        type="button"
+        className="link-button"
+        disabled={pending}
+        title="Send the last message again"
+        onClick={() => {
+          setPending(true);
+          setError(null);
+          onRetry()
+            .catch((err: Error) => setError(err.message))
+            .finally(() => setPending(false));
+        }}
+      >
+        ↻ Retry
+      </button>
+      {error && <span className="composer-error">{error}</span>}
+    </div>
+  );
+}
+
 interface AssistantViewProps {
   message: AssistantMessage;
   results: Map<string, ToolResultMessage>;
+  toolOutput: Record<string, string>;
   running: boolean;
   streaming?: boolean;
 }
@@ -117,6 +303,7 @@ interface AssistantViewProps {
 function AssistantView({
   message,
   results,
+  toolOutput,
   running,
   streaming = false,
 }: AssistantViewProps) {
@@ -139,10 +326,11 @@ function AssistantView({
             );
           case "toolCall":
             return (
-              <ToolCallLine
+              <ToolCallView
                 key={index}
                 call={block}
                 result={results.get(block.id)}
+                output={toolOutput[block.id]}
                 running={running}
               />
             );
@@ -156,7 +344,7 @@ function AssistantView({
         </div>
       )}
       {message.stopReason === "aborted" && (
-        <div className="msg-note">Aborted.</div>
+        <div className="msg-note">Stopped.</div>
       )}
       {message.stopReason === "length" && (
         <div className="msg-note">Stopped at the output token limit.</div>
@@ -172,19 +360,16 @@ function Thinking({
   block: ThinkingContent;
   active: boolean;
 }) {
-  // Open while it streams, then collapse, unless the user has toggled it.
-  const [toggled, setToggled] = useState<boolean | null>(null);
-  const open = toggled ?? active;
-
+  const [open, toggle] = useExpandable("thinking", active);
   const text = block.thinking.trim();
   if (!text && !active) return null;
   return (
     <div className={`thinking${open ? " open" : ""}`}>
       <button
         type="button"
-        className="thinking-toggle"
+        className="disclosure"
         aria-expanded={open}
-        onClick={() => setToggled(!open)}
+        onClick={toggle}
       >
         {active
           ? "Thinking…"
@@ -197,58 +382,45 @@ function Thinking({
   );
 }
 
-function ToolCallLine({
-  call,
-  result,
-  running,
-}: {
-  call: ToolCall;
-  result?: ToolResultMessage;
-  running: boolean;
-}) {
-  const status = result
-    ? result.isError
-      ? "error"
-      : "ok"
-    : running
-      ? "running"
-      : "unknown";
-  const summary = summarizeArguments(call.arguments);
-  const label = {
-    ok: "Done",
-    error: "Failed",
-    running: "Running",
-    unknown: "No result",
-  }[status];
+function CompactionView({ marker }: { marker: CompactionMarker }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div
-      className={`tool-call tool-${status}`}
-      title={summary ? `${call.name}: ${summary}` : call.name}
-    >
-      <span className="tool-status" aria-label={label} />
-      <span className="tool-name">{call.name}</span>
-      {summary && <span className="tool-args">{summary}</span>}
+    <div className={`compaction${open ? " open" : ""}`}>
+      <button
+        type="button"
+        className="msg-divider"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        Context compacted
+      </button>
+      {open && (
+        <div className="compaction-summary">
+          <Markdown text={marker.summary} />
+        </div>
+      )}
     </div>
   );
 }
 
-const SUMMARY_KEYS = [
-  "command",
-  "path",
-  "file_path",
-  "pattern",
-  "url",
-  "query",
-];
-
-function summarizeArguments(args: Record<string, unknown> | undefined): string {
-  if (!args) return "";
-  for (const key of SUMMARY_KEYS) {
-    const value = args[key];
-    if (typeof value === "string") return value.split("\n")[0];
+function lastUserMessage(messages: ChatMessage[]): UserMessage | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role === "user") return message;
   }
-  const json = JSON.stringify(args);
-  return json === "{}" ? "" : json;
+  return undefined;
+}
+
+function hasPendingCalls(
+  message: ChatMessage,
+  results: Map<string, ToolResultMessage>,
+): boolean {
+  return (
+    message.role === "assistant" &&
+    message.content.some(
+      (block) => block.type === "toolCall" && !results.has(block.id),
+    )
+  );
 }
 
 function contentText(content: string | (TextContent | ImageContent)[]): string {

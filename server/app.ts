@@ -3,13 +3,17 @@ import { join, normalize, sep } from "node:path";
 import type { Server, ServerWebSocket } from "bun";
 import packageJson from "../package.json";
 import type {
+  AbortResponse,
   ChatsResponse,
   ClientMessage,
-  CreateChatRequest,
   CreateChatResponse,
   ErrorResponse,
   HealthResponse,
+  ModelRef,
+  RewindRequest,
   ServerMessage,
+  UpdateChatRequest,
+  UpdateChatResponse,
 } from "../shared/protocol";
 import {
   ChatService,
@@ -41,7 +45,7 @@ export interface App {
 // Clients can be served from anywhere (Vite dev server, desktop app), and there is no auth to protect yet.
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
@@ -93,15 +97,31 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
       );
       return json({ chat } satisfies CreateChatResponse, 201);
     }
-    const messagesMatch = path.match(/^\/api\/chats\/([^/]+)\/messages$/);
-    if (messagesMatch && method === "POST") {
-      const body = await readJson(req);
-      await chats.sendMessage(
-        userId,
-        decodeURIComponent(messagesMatch[1]),
-        parseMessage(body.message),
-      );
-      return json({ ok: true }, 202);
+    const chatMatch = path.match(/^\/api\/chats\/([^/]+)(\/[a-z]+)?$/);
+    if (chatMatch) {
+      const chatId = decodeURIComponent(chatMatch[1]);
+      const route = `${method} ${chatMatch[2] ?? ""}`;
+      if (route === "PATCH ") {
+        const chat = await chats.updateChat(
+          userId,
+          chatId,
+          parseUpdate(await readJson(req)),
+        );
+        return json({ chat } satisfies UpdateChatResponse);
+      }
+      if (route === "POST /messages") {
+        const body = await readJson(req);
+        await chats.sendMessage(userId, chatId, parseMessage(body.message));
+        return json({ ok: true }, 202);
+      }
+      if (route === "POST /abort") {
+        const queued = await chats.abort(userId, chatId);
+        return json({ queued } satisfies AbortResponse);
+      }
+      if (route === "POST /rewind") {
+        await chats.rewind(userId, chatId, parseRewind(await readJson(req)));
+        return json({ ok: true }, 202);
+      }
     }
     throw new HttpError(404, "Not found");
   }
@@ -189,12 +209,33 @@ function parseMessage(value: unknown): string {
   return value;
 }
 
-function parseModel(value: unknown): CreateChatRequest["model"] {
+function parseModel(value: unknown): ModelRef {
   const model = value as Record<string, unknown> | null;
   if (typeof model?.provider !== "string" || typeof model?.id !== "string") {
     throw new HttpError(400, "model must be { provider, id }");
   }
   return { provider: model.provider, id: model.id };
+}
+
+function parseUpdate(body: Record<string, unknown>): UpdateChatRequest {
+  const update: UpdateChatRequest = {};
+  if (body.model !== undefined) update.model = parseModel(body.model);
+  if (body.archived !== undefined) {
+    if (typeof body.archived !== "boolean")
+      throw new HttpError(400, "archived must be a boolean");
+    update.archived = body.archived;
+  }
+  return update;
+}
+
+function parseRewind(body: Record<string, unknown>): RewindRequest {
+  if (typeof body.timestamp !== "number")
+    throw new HttpError(400, "timestamp must be a number");
+  return {
+    timestamp: body.timestamp,
+    message:
+      body.message === undefined ? undefined : parseMessage(body.message),
+  };
 }
 
 async function serveWeb(webDir: string | null, url: URL): Promise<Response> {

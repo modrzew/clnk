@@ -1,11 +1,15 @@
 import type {
+  AbortResponse,
   ClientMessage,
   CreateChatRequest,
   CreateChatResponse,
   ErrorResponse,
   HealthResponse,
   ModelsResponse,
+  RewindRequest,
   ServerMessage,
+  UpdateChatRequest,
+  UpdateChatResponse,
 } from "../../shared/protocol";
 
 export type ConnectionStatus = "connecting" | "open" | "offline";
@@ -77,9 +81,29 @@ export class BackendClient {
   }
 
   sendMessage(chatId: string, message: string) {
-    return this.request(`/api/chats/${encodeURIComponent(chatId)}/messages`, {
+    return this.request(`${chatPath(chatId)}/messages`, {
       method: "POST",
       body: JSON.stringify({ message }),
+    });
+  }
+
+  abort(chatId: string) {
+    return this.request<AbortResponse>(`${chatPath(chatId)}/abort`, {
+      method: "POST",
+    });
+  }
+
+  updateChat(chatId: string, body: UpdateChatRequest) {
+    return this.request<UpdateChatResponse>(chatPath(chatId), {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  }
+
+  rewind(chatId: string, body: RewindRequest) {
+    return this.request(`${chatPath(chatId)}/rewind`, {
+      method: "POST",
+      body: JSON.stringify(body),
     });
   }
 
@@ -147,6 +171,8 @@ export class BackendClient {
     for (const listener of this.statusListeners) listener(status);
   }
 }
+
+const chatPath = (chatId: string) => `/api/chats/${encodeURIComponent(chatId)}`;
 
 function webSocketUrl(baseUrl: string) {
   const url = new URL(`${baseUrl}/api/ws`);

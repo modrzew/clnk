@@ -14,7 +14,8 @@ Client-server chat frontend for the Pi agent harness: Bun backend (`server/`) + 
 - `applyServerMessage` in `shared/transcript.ts` is the transcript reducer the client applies — and the server applies it to its own copy before publishing (`ChatService.emit`, `server/chats.ts`). Keep both uses in sync when changing protocol or reducer.
 - One chat = one Pi AgentSession (`server/pi.ts`), cwd = per-chat folder under the data dir. Transcripts are the Pi JSONL session files next to the SQLite DB; chat metadata is in SQLite (`server/db.ts`).
 - All Pi sessions share the global `~/.pi/agent` config (models, MCP, extensions). Per-chat isolation is the cwd only — not a security boundary; the agent is told to stay inside via `chatInstructions` in `server/pi.ts`.
-- The frontend is stateless: on connect the server pushes the chat list, per-chat `subscribe` gets a snapshot then live events. Backend URL lives in localStorage; the Setup screen asks for it on load.
+- The frontend is stateless: on connect the server pushes the chat list, per-chat `subscribe` gets a snapshot then live events. Backend URL lives in localStorage; the Setup screen asks for it on load. So do per-device display preferences (`src/lib/prefs.ts`).
+- Edit and retry (`ChatService.rewind`) move the Pi session's leaf back with `navigateTree` and publish a fresh `snapshot`. The cut-off messages stay in the JSONL on an abandoned branch. User messages are addressed by their timestamp.
 
 ## Gotchas
 

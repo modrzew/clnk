@@ -2,7 +2,7 @@
 //
 // Message shapes mirror the subset of Pi's AgentMessage types the UI renders. They are declared here
 // instead of imported from the Pi SDK so the client doesn't depend on Pi's packages. Fields the UI
-// doesn't use yet (usage, signatures, tool details) still arrive over the wire.
+// doesn't use yet (usage, signatures) still arrive over the wire.
 
 export interface TextContent {
   type: "text";
@@ -58,6 +58,8 @@ export interface ToolResultMessage {
   toolCallId: string;
   toolName: string;
   content: (TextContent | ImageContent)[];
+  /** Tool-specific extras, e.g. `{ diff: string }` from the edit tool. */
+  details?: unknown;
   isError: boolean;
   timestamp: number;
 }
@@ -99,11 +101,21 @@ export interface ModelInfo extends ModelRef {
   contextWindow: number;
 }
 
+/** How full the model's context window is. */
+export interface ContextUsage {
+  /** Null while unknown: after compaction, until the next response. */
+  tokens: number | null;
+  contextWindow: number;
+}
+
 export interface ChatSummary {
   id: string;
   title: string;
   model: ModelRef;
   status: ChatStatus;
+  archived: boolean;
+  /** As of the last response. Null until a session reported it. */
+  context: ContextUsage | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -138,9 +150,37 @@ export interface CreateChatResponse {
   chat: ChatSummary;
 }
 
-/** POST /api/chats/:id/messages: starts a run. 409 while the chat is already running. */
+/**
+ * POST /api/chats/:id/messages: starts a run. While the chat is running, the message steers the run
+ * instead: Pi reads it after its current step. 409 for archived chats.
+ */
 export interface SendMessageRequest {
   message: string;
+}
+
+/** POST /api/chats/:id/abort: stops the run. Steering messages Pi hasn't read yet are dropped and returned. */
+export interface AbortResponse {
+  queued: string[];
+}
+
+/** PATCH /api/chats/:id: any subset of the fields. */
+export interface UpdateChatRequest {
+  model?: ModelRef;
+  archived?: boolean;
+}
+
+export interface UpdateChatResponse {
+  chat: ChatSummary;
+}
+
+/**
+ * POST /api/chats/:id/rewind: edits or retries a user message, identified by its timestamp. The
+ * transcript is cut back to just before it, and it's sent again: as `message` if given, otherwise
+ * unchanged. 409 while the chat is running or archived, or if the message is no longer in the chat.
+ */
+export interface RewindRequest {
+  timestamp: number;
+  message?: string;
 }
 
 export interface ErrorResponse {
@@ -158,12 +198,20 @@ export type ServerMessage =
   | { type: "chats"; chats: ChatSummary[] }
   /** Sent to every connected client of the chat's owner when a chat is created or changes. */
   | { type: "chat_updated"; chat: ChatSummary }
-  /** Full state of a chat, sent in reply to subscribe. Replaces whatever the client had. */
+  /** Sent to every connected client of the chat's owner, e.g. when creating the chat failed. */
+  | { type: "chat_deleted"; chatId: string }
+  /**
+   * Full state of a chat. Replaces whatever the client had. Sent in reply to subscribe, and to all
+   * subscribers when the transcript is rewound.
+   */
   | {
       type: "snapshot";
       chat: ChatSummary;
       messages: ChatMessage[];
       streaming: AssistantMessage | null;
+      toolOutput: Record<string, string>;
+      queued: string[];
+      activity: string | null;
     }
   /** A finished message was appended. An assistant message replaces the streaming one. */
   | { type: "message"; chatId: string; message: ChatMessage }
@@ -178,6 +226,18 @@ export type ServerMessage =
     }
   /** Text appended to a text or thinking block of the streaming message. */
   | { type: "stream_delta"; chatId: string; index: number; delta: string }
+  /** Output so far of a tool call that is still running. `append` adds to the output sent before. */
+  | {
+      type: "tool_output";
+      chatId: string;
+      toolCallId: string;
+      text: string;
+      append: boolean;
+    }
+  /** Steering messages Pi hasn't read yet. */
+  | { type: "queue"; chatId: string; queued: string[] }
+  /** What Pi is doing besides responding, e.g. compacting the context. Null when nothing. */
+  | { type: "activity"; chatId: string; activity: string | null }
   /** A run failed without producing an assistant error message. */
   | { type: "run_error"; chatId: string; error: string }
   | { type: "error"; error: string };

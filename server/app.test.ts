@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -43,7 +43,10 @@ async function createHost(
   });
   const faux = fauxProvider({
     provider: "faux",
-    models: [{ id: "faux-1", reasoning: true }],
+    models: [
+      { id: "faux-1", reasoning: true, contextWindow: 100_000 },
+      { id: "faux-2", contextWindow: 200_000 },
+    ],
     tokensPerSecond,
   });
   modelRuntime.registerNativeProvider(faux.provider);
@@ -108,6 +111,7 @@ class TestClient {
         for (const chat of msg.chats) this.chats.set(chat.id, chat);
       if (msg.type === "chat_updated" || msg.type === "snapshot")
         this.chats.set(msg.chat.id, msg.chat);
+      if (msg.type === "chat_deleted") this.chats.delete(msg.chatId);
       const chatId =
         msg.type === "snapshot"
           ? msg.chat.id
@@ -170,6 +174,61 @@ function roles(state: TranscriptState) {
   return state.messages.map((message) => message.role);
 }
 
+/** Text of each user message and each assistant message's text blocks. */
+function texts(state: TranscriptState) {
+  return state.messages.flatMap((message) => {
+    if (message.role === "user")
+      return typeof message.content === "string"
+        ? [message.content]
+        : message.content.flatMap((part) =>
+            part.type === "text" ? [part.text] : [],
+          );
+    if (message.role === "assistant")
+      return message.content.flatMap((block) =>
+        block.type === "text" ? [block.text] : [],
+      );
+    return [];
+  });
+}
+
+function userTimestamp(state: TranscriptState, text: string): number {
+  const message = state.messages.find(
+    (message) =>
+      message.role === "user" &&
+      texts({ ...state, messages: [message] })[0] === text,
+  );
+  if (!message) throw new Error(`No user message "${text}"`);
+  return message.timestamp;
+}
+
+/** Creates a chat and waits until its first run is done. */
+async function startChat(
+  { app, api }: Awaited<ReturnType<typeof setup>>,
+  message = "Hi",
+) {
+  const client = await TestClient.connect(app);
+  const { body } = await api("/api/chats", post({ model: MODEL, message }));
+  const chatId = body.chat.id as string;
+  client.send({ type: "subscribe", chatId });
+  await client.waitForStatus(chatId, "idle");
+  await client.waitFor(() => client.transcript(chatId).loaded);
+  return { client, chatId };
+}
+
+/** Waits for a run to end with the given reply. */
+async function waitForReply(client: TestClient, chatId: string, text: string) {
+  await client.waitFor(() => texts(client.transcript(chatId)).at(-1) === text);
+  await client.waitForStatus(chatId, "idle");
+}
+
+function patch(body: unknown): RequestInit {
+  return { method: "PATCH", body: JSON.stringify(body) };
+}
+
+const SLOW_REPLY = "A reply that takes a little while to stream out. ".repeat(
+  6,
+);
+
 describe("backend", () => {
   test("reports health and the available models", async () => {
     const { api } = await setup();
@@ -215,6 +274,7 @@ describe("backend", () => {
       title: "Say hi",
       model: MODEL,
       status: "running",
+      archived: false,
     });
 
     client.send({ type: "subscribe", chatId: chat.id });
@@ -292,12 +352,11 @@ describe("backend", () => {
     });
   });
 
-  test("rejects a new message while the chat is running", async () => {
+  test("a message sent while the chat is running steers the run", async () => {
     const { app, faux, api } = await setup({ tokensPerSecond: 400 });
     faux.setResponses([
-      fauxAssistantMessage(
-        "A reply that takes a little while to stream out. ".repeat(4),
-      ),
+      fauxAssistantMessage(SLOW_REPLY),
+      fauxAssistantMessage("Changed course."),
     ]);
     const client = await TestClient.connect(app);
     const { body } = await api(
@@ -305,19 +364,254 @@ describe("backend", () => {
       post({ model: MODEL, message: "First" }),
     );
     const chatId = body.chat.id as string;
+    client.send({ type: "subscribe", chatId });
+    await client.waitFor(() => client.transcript(chatId).streaming !== null);
 
-    const busy = await api(
+    const steer = await api(
       `/api/chats/${chatId}/messages`,
-      post({ message: "Second" }),
+      post({ message: "Change of plans" }),
     );
-    expect(busy.status).toBe(409);
+    expect(steer.status).toBe(202);
+    await client.waitFor(
+      () => client.transcript(chatId).queued[0] === "Change of plans",
+    );
 
     await client.waitForStatus(chatId, "idle");
-    faux.setResponses([fauxAssistantMessage("Second reply.")]);
+    await client.waitFor(() => client.transcript(chatId).messages.length === 4);
+    expect(texts(client.transcript(chatId))).toEqual([
+      "First",
+      SLOW_REPLY,
+      "Change of plans",
+      "Changed course.",
+    ]);
+    expect(client.transcript(chatId).queued).toEqual([]);
+  });
+
+  test("stops a run and hands back the steering messages Pi hadn't read", async () => {
+    const { app, faux, api } = await setup({ tokensPerSecond: 200 });
+    faux.setResponses([fauxAssistantMessage(SLOW_REPLY)]);
+    const client = await TestClient.connect(app);
+    const { body } = await api(
+      "/api/chats",
+      post({ model: MODEL, message: "First" }),
+    );
+    const chatId = body.chat.id as string;
+    client.send({ type: "subscribe", chatId });
+    await client.waitFor(() => client.transcript(chatId).streaming !== null);
+    await api(`/api/chats/${chatId}/messages`, post({ message: "Also this" }));
+
+    const stopped = await api(`/api/chats/${chatId}/abort`, post({}));
+    expect(stopped.body).toEqual({ queued: ["Also this"] });
+    await client.waitForStatus(chatId, "idle");
+    const transcript = client.transcript(chatId);
+    expect(transcript.queued).toEqual([]);
+    expect(transcript.messages.at(-1)).toMatchObject({
+      role: "assistant",
+      stopReason: "aborted",
+    });
+    expect(roles(transcript)).toEqual(["user", "assistant"]);
+  });
+
+  test("switches the chat's model and reports how full the context is", async () => {
+    const setupResult = await setup();
+    const { faux, api } = setupResult;
+    faux.setResponses([fauxAssistantMessage("Hello!")]);
+    const { client, chatId } = await startChat(setupResult);
+    await client.waitFor(() => client.chats.get(chatId)?.context !== null);
+    const context = client.chats.get(chatId)?.context;
+    expect(context?.contextWindow).toBe(100_000);
+    expect(context?.tokens).toBeGreaterThan(0);
+
+    const switched = await api(
+      `/api/chats/${chatId}`,
+      patch({ model: { provider: "faux", id: "faux-2" } }),
+    );
+    expect(switched.status).toBe(200);
+    expect(switched.body.chat).toMatchObject({
+      model: { provider: "faux", id: "faux-2" },
+      context: { contextWindow: 200_000, tokens: context?.tokens },
+    });
+
+    faux.setResponses([fauxAssistantMessage("Hello from faux-2!")]);
+    await api(`/api/chats/${chatId}/messages`, post({ message: "Again" }));
+    await client.waitForStatus(chatId, "idle");
+    await client.waitFor(() => client.transcript(chatId).messages.length === 4);
+    expect(client.transcript(chatId).messages[3]).toMatchObject({
+      role: "assistant",
+      model: "faux-2",
+    });
+
+    // Once the idle session is unloaded, switching only updates the chat.
+    await Bun.sleep(100);
+    const back = await api(`/api/chats/${chatId}`, patch({ model: MODEL }));
+    expect(back.body.chat.model).toEqual(MODEL);
+    expect(back.body.chat.context.contextWindow).toBe(100_000);
     expect(
-      (await api(`/api/chats/${chatId}/messages`, post({ message: "Second" })))
+      (
+        await api(
+          `/api/chats/${chatId}`,
+          patch({ model: { provider: "faux", id: "nope" } }),
+        )
+      ).status,
+    ).toBe(400);
+  });
+
+  test("archived chats can't be continued until they're unarchived", async () => {
+    const setupResult = await setup();
+    const { faux, api } = setupResult;
+    faux.setResponses([fauxAssistantMessage("Hello!")]);
+    const { client, chatId } = await startChat(setupResult);
+
+    const archived = await api(
+      `/api/chats/${chatId}`,
+      patch({ archived: true }),
+    );
+    expect(archived.body.chat.archived).toBe(true);
+    await client.waitFor(() => client.chats.get(chatId)?.archived === true);
+    expect((await api("/api/chats")).body.chats[0].archived).toBe(true);
+    expect(
+      (await api(`/api/chats/${chatId}/messages`, post({ message: "Hi" })))
+        .status,
+    ).toBe(409);
+    const timestamp = userTimestamp(client.transcript(chatId), "Hi");
+    expect(
+      (await api(`/api/chats/${chatId}/rewind`, post({ timestamp }))).status,
+    ).toBe(409);
+
+    await api(`/api/chats/${chatId}`, patch({ archived: false }));
+    faux.setResponses([fauxAssistantMessage("Welcome back.")]);
+    expect(
+      (await api(`/api/chats/${chatId}/messages`, post({ message: "Hi" })))
         .status,
     ).toBe(202);
+    await client.waitForStatus(chatId, "idle");
+  });
+
+  test("editing or retrying a message replaces it and everything after it", async () => {
+    const setupResult = await setup();
+    const { faux, api, stop, dataDir } = setupResult;
+    faux.setResponses([fauxAssistantMessage("One.")]);
+    const { client, chatId } = await startChat(setupResult, "First");
+    faux.setResponses([fauxAssistantMessage("Two.")]);
+    await api(`/api/chats/${chatId}/messages`, post({ message: "Second" }));
+    await waitForReply(client, chatId, "Two.");
+
+    // What the model is sent: the cut-off messages are gone from its context.
+    let seen: string[] = [];
+    faux.setResponses([
+      (context) => {
+        seen = context.messages.flatMap((message) =>
+          message.role === "system"
+            ? []
+            : typeof message.content === "string"
+              ? [message.content]
+              : message.content.flatMap((part) =>
+                  part.type === "text" ? [part.text] : [],
+                ),
+        );
+        return fauxAssistantMessage("Two, edited.");
+      },
+    ]);
+    const second = userTimestamp(client.transcript(chatId), "Second");
+    const edited = await api(
+      `/api/chats/${chatId}/rewind`,
+      post({ timestamp: second, message: "Second, edited" }),
+    );
+    expect(edited.status).toBe(202);
+    await waitForReply(client, chatId, "Two, edited.");
+    expect(texts(client.transcript(chatId))).toEqual([
+      "First",
+      "One.",
+      "Second, edited",
+      "Two, edited.",
+    ]);
+    expect(seen).toEqual(["First", "One.", "Second, edited"]);
+
+    // The cut-off message can't be rewound to anymore.
+    expect(
+      (await api(`/api/chats/${chatId}/rewind`, post({ timestamp: second })))
+        .status,
+    ).toBe(409);
+
+    // Retrying sends the same message again.
+    faux.setResponses([fauxAssistantMessage("One, retried.")]);
+    const first = userTimestamp(client.transcript(chatId), "First");
+    await api(`/api/chats/${chatId}/rewind`, post({ timestamp: first }));
+    await waitForReply(client, chatId, "One, retried.");
+    expect(texts(client.transcript(chatId))).toEqual([
+      "First",
+      "One, retried.",
+    ]);
+    expect(client.chats.get(chatId)?.title).toBe("First");
+
+    // Editing the first message renames the chat.
+    faux.setResponses([fauxAssistantMessage("A fresh start.")]);
+    await api(
+      `/api/chats/${chatId}/rewind`,
+      post({
+        timestamp: userTimestamp(client.transcript(chatId), "First"),
+        message: "Brand new start",
+      }),
+    );
+    await waitForReply(client, chatId, "A fresh start.");
+    expect(client.chats.get(chatId)?.title).toBe("Brand new start");
+
+    // The session file continues from the edited branch.
+    await stop();
+    const restarted = await setup({ dataDir });
+    const reconnected = await TestClient.connect(restarted.app);
+    reconnected.send({ type: "subscribe", chatId });
+    await reconnected.waitFor(() => reconnected.transcript(chatId).loaded);
+    expect(texts(reconnected.transcript(chatId))).toEqual([
+      "Brand new start",
+      "A fresh start.",
+    ]);
+  });
+
+  test("streams a tool's output while it runs", async () => {
+    const setupResult = await setup();
+    const { faux } = setupResult;
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("bash", {
+          command: "for i in 1 2 3; do echo line$i; sleep 0.25; done",
+        }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage("Done."),
+    ]);
+    const { client, chatId } = await startChat(setupResult, "Count");
+    await client.waitFor(() => client.transcript(chatId).messages.length === 4);
+    const outputs = client.received.filter((msg) => msg.type === "tool_output");
+    expect(outputs.length).toBeGreaterThan(1);
+    expect(
+      outputs.some((msg) => msg.append && msg.text.includes("line1")),
+    ).toBe(true);
+    const transcript = client.transcript(chatId);
+    expect(transcript.toolOutput).toEqual({});
+    expect(transcript.messages[2]).toMatchObject({
+      role: "toolResult",
+      content: [{ type: "text", text: "line1\nline2\nline3\n" }],
+    });
+  });
+
+  test("a chat whose first run can't start is deleted again", async () => {
+    const { app, api, dataDir } = await setup();
+    const client = await TestClient.connect(app);
+    // A file where the transcripts go makes loading the Pi session fail.
+    writeFileSync(join(dataDir, "sessions"), "");
+    const logged = spyOn(console, "error").mockImplementation(() => {});
+    cleanup.push(() => logged.mockRestore());
+    const created = await api(
+      "/api/chats",
+      post({ model: MODEL, message: "Hi" }),
+    );
+    expect(created.status).toBe(500);
+    expect((await api("/api/chats")).body.chats).toEqual([]);
+    await client.waitFor(() =>
+      client.received.some((msg) => msg.type === "chat_deleted"),
+    );
+    expect(client.chats.size).toBe(0);
   });
 
   test("validates requests", async () => {
