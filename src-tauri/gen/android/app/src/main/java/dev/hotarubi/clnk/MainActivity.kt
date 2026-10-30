@@ -1,5 +1,8 @@
 package dev.hotarubi.clnk
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import androidx.activity.enableEdgeToEdge
@@ -22,6 +25,14 @@ class MainActivity : TauriActivity() {
       )
       view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
       WindowInsetsCompat.CONSUMED
+    }
+    // From Android 17 the WebView can't reach the local network, where the backend usually is, until
+    // the user grants this. The page's client keeps retrying, so it connects once the permission is in.
+    if (
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN &&
+      checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED
+    ) {
+      requestPermissions(arrayOf(Manifest.permission.ACCESS_LOCAL_NETWORK), 0)
     }
   }
 }

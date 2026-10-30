@@ -24,5 +24,5 @@ Client-server chat frontend for the Pi agent harness: Bun backend (`server/`) + 
 - Components style with CSS modules. Their class types are generated into the gitignored `generated/` by css-modules-kit (`cmk`, run by `typecheck` and `build`; `bun dev` keeps them current). Bare `tsc` without them silently types every class as `string`.
 
 - Per-chat workspace folders are transient and may be pruned; any code reading them must tolerate missing files (e.g. `readTranscript` → `[]`).
-- `src-tauri/gen/android` came from `tauri android init` but has hand edits (signing, cleartext HTTP, insets in `MainActivity.kt`). Don't regenerate it without carrying them over.
+- `src-tauri/gen/android` came from `tauri android init` but has hand edits (`app/build.gradle.kts`, `AndroidManifest.xml`, `MainActivity.kt`). Don't regenerate it without carrying them over.
 - `pi-agent/` is gitignored but required for the docker-compose Pi config volume — don't delete or commit it.
