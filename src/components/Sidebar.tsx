@@ -1,8 +1,12 @@
 import { useState } from "react";
+import {
+  LuArchive,
+  LuArchiveRestore,
+  LuSlidersHorizontal,
+} from "react-icons/lu";
 import type { ChatSummary } from "../../shared/protocol";
 import type { ConnectionStatus } from "../lib/client";
 import { navigate, type Route } from "../lib/hooks";
-import { ArchiveIcon, SettingsIcon, UnarchiveIcon } from "./icons";
 
 interface SidebarProps {
   chats: ChatSummary[] | null;
@@ -61,7 +65,11 @@ export function Sidebar({
         title={chat.archived ? "Unarchive" : "Archive"}
         onClick={() => onArchive(chat.id, !chat.archived)}
       >
-        {chat.archived ? <UnarchiveIcon /> : <ArchiveIcon />}
+        {chat.archived ? (
+          <LuArchiveRestore size={16} aria-hidden />
+        ) : (
+          <LuArchive size={16} aria-hidden />
+        )}
       </button>
     </li>
   );
@@ -79,7 +87,7 @@ export function Sidebar({
             title="Display settings"
             onClick={onOpenSettings}
           >
-            <SettingsIcon />
+            <LuSlidersHorizontal size={16} aria-hidden />
           </button>
           <a className="new-chat-button" href="#/" onClick={onClose}>
             + New chat

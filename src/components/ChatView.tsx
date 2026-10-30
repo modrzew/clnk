@@ -1,11 +1,11 @@
 import { useCallback, useState } from "react";
+import { LuArchive, LuArchiveRestore } from "react-icons/lu";
 import type { ChatSummary, ModelInfo } from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
 import { useTranscript } from "../lib/hooks";
 import { Composer } from "./Composer";
 import { ContextMeter } from "./ContextMeter";
 import { Header } from "./Header";
-import { ArchiveIcon, UnarchiveIcon } from "./icons";
 import { ModelSelect } from "./ModelSelect";
 import { Transcript } from "./Transcript";
 
@@ -65,7 +65,11 @@ export function ChatView({
             title={archived ? "Unarchive chat" : "Archive chat"}
             onClick={() => setArchived(!archived)}
           >
-            {archived ? <UnarchiveIcon /> : <ArchiveIcon />}
+            {archived ? (
+              <LuArchiveRestore size={16} aria-hidden />
+            ) : (
+              <LuArchive size={16} aria-hidden />
+            )}
           </button>
         )}
       </Header>

@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { StopIcon } from "./icons";
+import { LuSquare } from "react-icons/lu";
 
 interface ComposerProps {
   onSend: (text: string) => Promise<void>;
@@ -125,7 +125,7 @@ export function Composer({
             title="Stop (Esc)"
             onClick={() => void stop()}
           >
-            <StopIcon />
+            <LuSquare size={12} fill="currentColor" aria-hidden />
           </button>
         )}
         <button
