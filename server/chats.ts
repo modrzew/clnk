@@ -55,6 +55,8 @@ interface Runtime {
   transcript: TranscriptState;
   /** Between Pi's agent_start and agent_settled. Covers runs Pi or an extension starts on its own. */
   agentActive: boolean;
+  /** Pi ran since the chat was last idle, and wasn't stopped: chat_finished is due once it's idle. */
+  finishPending: boolean;
   unsubscribe: () => void;
   idleTimer?: ReturnType<typeof setTimeout>;
 }
@@ -72,6 +74,7 @@ export interface ChatServiceOptions {
 }
 
 const TITLE_LENGTH = 80;
+const FINISHED_TEXT_LENGTH = 200;
 
 /**
  * Owns the Pi sessions behind chats. Runs continue whether or not any client is connected; clients
@@ -161,6 +164,8 @@ export class ChatService {
     this.getChat(userId, chatId);
     const runtime = await this.loadedRuntime(chatId);
     if (!runtime) return [];
+    // Whoever stopped it knows it's done.
+    runtime.finishPending = false;
     const { steering, followUp } = runtime.session.clearQueue();
     await runtime.session.abort();
     return [...steering, ...followUp];
@@ -418,6 +423,7 @@ export class ChatService {
         messages: transcriptFromEntries(session.sessionManager.getBranch()),
       },
       agentActive: false,
+      finishPending: false,
       unsubscribe: () => {},
     };
     runtime.unsubscribe = session.subscribe((event) =>
@@ -458,6 +464,7 @@ export class ChatService {
     switch (event.type) {
       case "agent_start":
         runtime.agentActive = true;
+        runtime.finishPending = true;
         this.refreshStatus(chatId);
         break;
       case "agent_settled":
@@ -596,11 +603,37 @@ export class ChatService {
     const runtime = this.runtimes.get(chatId);
     if (!runtime) return;
     clearTimeout(runtime.idleTimer);
-    if (status === "idle")
-      runtime.idleTimer = setTimeout(
-        () => this.unload(chatId),
-        this.idleTimeoutMs,
-      );
+    if (status !== "idle") return;
+    if (runtime.finishPending) {
+      runtime.finishPending = false;
+      this.publishFinished(chatId, runtime);
+    }
+    runtime.idleTimer = setTimeout(
+      () => this.unload(chatId),
+      this.idleTimeoutMs,
+    );
+  }
+
+  /** Tells the owner's clients Pi is done with the chat, and how it went. */
+  private publishFinished(chatId: string, runtime: Runtime) {
+    const chat = this.options.db.getChatById(chatId);
+    // Runs end when the server stops too, but they didn't finish.
+    if (!chat || this.closing) return;
+    const { error, messages } = runtime.transcript;
+    const reply = messages.findLast((message) => message.role === "assistant");
+    const failed = error !== null || reply?.stopReason === "error";
+    const text = failed
+      ? (error ?? reply?.errorMessage ?? "")
+      : (reply?.content ?? [])
+          .flatMap((block) => (block.type === "text" ? [block.text] : []))
+          .join(" ");
+    this.options.publish(userTopic(chat.userId), {
+      type: "chat_finished",
+      chatId,
+      title: chat.title,
+      failed,
+      text: truncate(text.replace(/\s+/g, " ").trim(), FINISHED_TEXT_LENGTH),
+    });
   }
 
   private unload(chatId: string) {
@@ -680,10 +713,11 @@ export class ChatService {
 const busy = () => new HttpError(409, "Pi is still working on this chat");
 
 function titleFrom(message: string): string {
-  const line = message.trim().split("\n")[0].trim();
-  return line.length > TITLE_LENGTH
-    ? `${line.slice(0, TITLE_LENGTH - 1)}…`
-    : line;
+  return truncate(message.trim().split("\n")[0].trim(), TITLE_LENGTH);
+}
+
+function truncate(text: string, length: number): string {
+  return text.length > length ? `${text.slice(0, length - 1)}…` : text;
 }
 
 function contentText(

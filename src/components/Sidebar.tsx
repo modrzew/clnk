@@ -185,8 +185,8 @@ export function Sidebar({
           <button
             type="button"
             className={cx(ui.iconButton, styles.settingsButton)}
-            aria-label="Display settings"
-            title="Display settings"
+            aria-label="Settings"
+            title="Settings"
             onClick={onOpenSettings}
           >
             <LuSlidersHorizontal size={16} aria-hidden />

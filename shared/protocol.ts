@@ -276,6 +276,19 @@ export type ServerMessage =
   /** Sent to every connected client of the chat's owner, e.g. when creating the chat failed. */
   | { type: "chat_deleted"; chatId: string }
   /**
+   * Sent to every connected client of the chat's owner when Pi is done with the chat: it ran, and
+   * nothing is running or about to anymore. Not sent when the run was stopped. For notifications.
+   */
+  | {
+      type: "chat_finished";
+      chatId: string;
+      title: string;
+      /** The last run ended with an error. */
+      failed: boolean;
+      /** The start of Pi's last reply, or the error. Can be empty. */
+      text: string;
+    }
+  /**
    * Full state of a chat. Replaces whatever the client had. Sent in reply to subscribe, and to all
    * subscribers when the transcript is rewound.
    */

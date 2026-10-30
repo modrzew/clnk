@@ -455,6 +455,46 @@ describe("backend", () => {
     expect(roles(transcript)).toEqual(["user", "assistant"]);
   });
 
+  test("tells clients when Pi is done with a chat, unless the run was stopped", async () => {
+    const setupResult = await setup({ tokensPerSecond: 200 });
+    const { faux, api } = setupResult;
+    faux.setResponses([
+      fauxAssistantMessage(
+        [fauxText("Running it."), fauxToolCall("bash", { command: "echo hi" })],
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage("All   done.\nBye."),
+    ]);
+    const { client, chatId } = await startChat(setupResult, "First\nline");
+    const finished = () =>
+      client.received.filter((msg) => msg.type === "chat_finished");
+    await client.waitFor(() => finished().length === 1);
+    expect(finished()).toEqual([
+      {
+        type: "chat_finished",
+        chatId,
+        title: "First",
+        failed: false,
+        text: "All done. Bye.",
+      },
+    ]);
+
+    faux.setResponses([
+      fauxAssistantMessage("", { stopReason: "error", errorMessage: "Boom" }),
+    ]);
+    await api(`/api/chats/${chatId}/messages`, post({ message: "Again" }));
+    await client.waitFor(() => finished().length === 2);
+    expect(finished()[1]).toMatchObject({ failed: true, text: "Boom" });
+
+    faux.setResponses([fauxAssistantMessage(SLOW_REPLY)]);
+    await api(`/api/chats/${chatId}/messages`, post({ message: "Slow" }));
+    await client.waitFor(() => client.transcript(chatId).streaming !== null);
+    await api(`/api/chats/${chatId}/abort`, post({}));
+    await client.waitForStatus(chatId, "idle");
+    await Bun.sleep(20);
+    expect(finished()).toHaveLength(2);
+  });
+
   test("switches the chat's model and reports how full the context is", async () => {
     const setupResult = await setup();
     const { faux, api } = setupResult;

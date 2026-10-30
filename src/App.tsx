@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChatView } from "./components/ChatView";
-import { DisplaySettings } from "./components/DisplaySettings";
 import { NewChat } from "./components/NewChat";
 import { ProjectDialog } from "./components/ProjectDialog";
 import { ProjectView } from "./components/ProjectView";
+import { Settings } from "./components/Settings";
 import { Setup } from "./components/Setup";
 import { Sidebar } from "./components/Sidebar";
 import { BackendClient } from "./lib/client";
@@ -15,6 +15,7 @@ import {
   useProjects,
   useRoute,
 } from "./lib/hooks";
+import { useChatNotifications } from "./lib/notifications";
 import styles from "./App.module.css";
 
 const BACKEND_URL_KEY = "clnk.backendUrl";
@@ -72,6 +73,7 @@ function Shell({
   const projects = useProjects(client);
   const models = useModels(client);
   const route = useRoute();
+  useChatNotifications(client, route.name === "chat" ? route.chatId : null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
@@ -139,10 +141,7 @@ function Shell({
             .catch((err: Error) => setError(err.message));
         }}
       />
-      <DisplaySettings
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
+      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       {creatingProject && (
         <ProjectDialog
           onClose={() => setCreatingProject(false)}

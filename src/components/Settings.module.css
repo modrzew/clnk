@@ -1,3 +1,18 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .text {
   margin: 0;
   font-size: 14px;
@@ -31,6 +46,14 @@
 .settingHint {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.setting input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .setting select {
