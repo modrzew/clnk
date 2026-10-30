@@ -11,11 +11,15 @@ const BACKEND_URL_KEY = "clnk.backendUrl";
 
 /** Served over http(s), the page most likely came from the backend itself (or the dev proxy). */
 function suggestedBackendUrl() {
-  return window.location.protocol.startsWith("http") ? window.location.origin : "";
+  return window.location.protocol.startsWith("http")
+    ? window.location.origin
+    : "";
 }
 
 function App() {
-  const [backendUrl, setBackendUrl] = useState(() => localStorage.getItem(BACKEND_URL_KEY));
+  const [backendUrl, setBackendUrl] = useState(() =>
+    localStorage.getItem(BACKEND_URL_KEY),
+  );
   const [changingBackend, setChangingBackend] = useState(false);
 
   if (!backendUrl || changingBackend) {
@@ -31,10 +35,22 @@ function App() {
       />
     );
   }
-  return <Shell key={backendUrl} backendUrl={backendUrl} onChangeBackend={() => setChangingBackend(true)} />;
+  return (
+    <Shell
+      key={backendUrl}
+      backendUrl={backendUrl}
+      onChangeBackend={() => setChangingBackend(true)}
+    />
+  );
 }
 
-function Shell({ backendUrl, onChangeBackend }: { backendUrl: string; onChangeBackend: () => void }) {
+function Shell({
+  backendUrl,
+  onChangeBackend,
+}: {
+  backendUrl: string;
+  onChangeBackend: () => void;
+}) {
   const client = useMemo(() => new BackendClient(backendUrl), [backendUrl]);
   useEffect(() => {
     client.connect();
@@ -59,7 +75,9 @@ function Shell({ backendUrl, onChangeBackend }: { backendUrl: string; onChangeBa
         onChangeBackend={onChangeBackend}
       />
       <main className="main">
-        {connection === "offline" && <div className="offline-banner">Connection lost. Reconnecting…</div>}
+        {connection === "offline" && (
+          <div className="offline-banner">Connection lost. Reconnecting…</div>
+        )}
         {route.name === "chat" ? (
           <ChatView
             key={route.chatId}

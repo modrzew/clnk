@@ -1,4 +1,10 @@
-import { type FormEvent, type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 interface ComposerProps {
   onSend: (text: string) => Promise<void>;
@@ -12,7 +18,12 @@ const MAX_HEIGHT_PX = 240;
 // On touch devices Enter inserts a newline, the button sends, and the keyboard isn't opened unasked.
 const isTouch = () => window.matchMedia("(pointer: coarse)").matches;
 
-export function Composer({ onSend, blockedReason, placeholder = "Message Pi", autoFocus }: ComposerProps) {
+export function Composer({
+  onSend,
+  blockedReason,
+  placeholder = "Message Pi",
+  autoFocus,
+}: ComposerProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +54,12 @@ export function Composer({ onSend, blockedReason, placeholder = "Message Pi", au
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && !isTouch()) {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.nativeEvent.isComposing &&
+      !isTouch()
+    ) {
       event.preventDefault();
       submit();
     }
@@ -62,7 +78,12 @@ export function Composer({ onSend, blockedReason, placeholder = "Message Pi", au
           onChange={(event) => setText(event.target.value)}
           onKeyDown={onKeyDown}
         />
-        <button type="submit" className="send" disabled={!canSend} aria-label="Send">
+        <button
+          type="submit"
+          className="send"
+          disabled={!canSend}
+          aria-label="Send"
+        >
           ↑
         </button>
       </div>

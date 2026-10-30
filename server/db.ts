@@ -53,12 +53,16 @@ export class Db {
     this.db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
     this.migrate();
     this.db
-      .query("INSERT OR IGNORE INTO users (id, name, created_at) VALUES (?, ?, ?)")
+      .query(
+        "INSERT OR IGNORE INTO users (id, name, created_at) VALUES (?, ?, ?)",
+      )
       .run(DEFAULT_USER_ID, "Default user", Date.now());
   }
 
   private migrate() {
-    const { user_version } = this.db.query("PRAGMA user_version").get() as { user_version: number };
+    const { user_version } = this.db.query("PRAGMA user_version").get() as {
+      user_version: number;
+    };
     for (let version = user_version; version < MIGRATIONS.length; version++) {
       this.db.transaction(() => {
         this.db.exec(MIGRATIONS[version]);
@@ -75,12 +79,16 @@ export class Db {
   }
 
   getChat(userId: string, chatId: string): ChatRow | null {
-    const row = this.db.query("SELECT * FROM chats WHERE id = ? AND user_id = ?").get(chatId, userId) as RawChatRow | null;
+    const row = this.db
+      .query("SELECT * FROM chats WHERE id = ? AND user_id = ?")
+      .get(chatId, userId) as RawChatRow | null;
     return row ? toChatRow(row) : null;
   }
 
   getChatById(chatId: string): ChatRow | null {
-    const row = this.db.query("SELECT * FROM chats WHERE id = ?").get(chatId) as RawChatRow | null;
+    const row = this.db
+      .query("SELECT * FROM chats WHERE id = ?")
+      .get(chatId) as RawChatRow | null;
     return row ? toChatRow(row) : null;
   }
 
@@ -107,11 +115,15 @@ export class Db {
   }
 
   setSessionFile(chatId: string, sessionFile: string) {
-    this.db.query("UPDATE chats SET session_file = ? WHERE id = ?").run(sessionFile, chatId);
+    this.db
+      .query("UPDATE chats SET session_file = ? WHERE id = ?")
+      .run(sessionFile, chatId);
   }
 
   touchChat(chatId: string, updatedAt = Date.now()) {
-    this.db.query("UPDATE chats SET updated_at = ? WHERE id = ?").run(updatedAt, chatId);
+    this.db
+      .query("UPDATE chats SET updated_at = ? WHERE id = ?")
+      .run(updatedAt, chatId);
   }
 
   deleteChat(chatId: string) {

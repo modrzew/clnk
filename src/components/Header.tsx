@@ -10,7 +10,12 @@ interface HeaderProps {
 export function Header({ title, model, running, onMenu }: HeaderProps) {
   return (
     <header className="header">
-      <button type="button" className="icon-button menu-button" aria-label="Show chats" onClick={onMenu}>
+      <button
+        type="button"
+        className="icon-button menu-button"
+        aria-label="Show chats"
+        onClick={onMenu}
+      >
         ☰
       </button>
       <h1 className="header-title">{title}</h1>

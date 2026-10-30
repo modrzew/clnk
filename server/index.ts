@@ -7,7 +7,9 @@ const app = startApp({ config, pi: await createPiHost() });
 
 console.log(`clnk backend listening on ${app.url}`);
 console.log(`Data: ${config.dataDir}`);
-console.log(config.webDir ? `Web UI: ${config.webDir}` : "Web UI not built; API only.");
+console.log(
+  config.webDir ? `Web UI: ${config.webDir}` : "Web UI not built; API only.",
+);
 
 let stopping = false;
 async function shutdown() {

@@ -1,11 +1,27 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { join, relative } from "node:path";
-import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import type { ChatStatus, ChatSummary, ModelRef, ServerMessage } from "../shared/protocol";
+import type {
+  AgentSession,
+  AgentSessionEvent,
+} from "@earendil-works/pi-coding-agent";
+import type {
+  ChatStatus,
+  ChatSummary,
+  ModelRef,
+  ServerMessage,
+} from "../shared/protocol";
 import { applyServerMessage, type TranscriptState } from "../shared/transcript";
 import type { ChatRow, Db } from "./db";
-import { compactionMarker, hasModel, openChatSession, type PiHost, readTranscript, toChatMessage, transcriptFromEntries } from "./pi";
+import {
+  compactionMarker,
+  hasModel,
+  openChatSession,
+  type PiHost,
+  readTranscript,
+  toChatMessage,
+  transcriptFromEntries,
+} from "./pi";
 import { streamMessage } from "./stream";
 
 export type Publish = (topic: string, message: ServerMessage) => void;
@@ -66,9 +82,17 @@ export class ChatService {
     return this.options.db.listChats(userId).map((chat) => this.summary(chat));
   }
 
-  async createChat(userId: string, model: ModelRef, message: string): Promise<ChatSummary> {
+  async createChat(
+    userId: string,
+    model: ModelRef,
+    message: string,
+  ): Promise<ChatSummary> {
     if (!message.trim()) throw new HttpError(400, "Message is empty");
-    if (!hasModel(this.options.pi, model)) throw new HttpError(400, `Model ${model.provider}/${model.id} is not available`);
+    if (!hasModel(this.options.pi, model))
+      throw new HttpError(
+        400,
+        `Model ${model.provider}/${model.id} is not available`,
+      );
     const now = Date.now();
     const chat: ChatRow = {
       id: randomUUID(),
@@ -90,30 +114,49 @@ export class ChatService {
     return this.summary(this.getChat(userId, chat.id));
   }
 
-  async sendMessage(userId: string, chatId: string, message: string): Promise<void> {
+  async sendMessage(
+    userId: string,
+    chatId: string,
+    message: string,
+  ): Promise<void> {
     const chat = this.getChat(userId, chatId);
-    if (this.status(chatId) === "running") throw new HttpError(409, "Pi is still working on this chat");
+    if (this.status(chatId) === "running")
+      throw new HttpError(409, "Pi is still working on this chat");
     await this.startRun(chat, message);
   }
 
   /** Current state of a chat for a client that just subscribed, or null if the user has no such chat. */
-  snapshot(userId: string, chatId: string): Extract<ServerMessage, { type: "snapshot" }> | null {
+  snapshot(
+    userId: string,
+    chatId: string,
+  ): Extract<ServerMessage, { type: "snapshot" }> | null {
     const chat = this.options.db.getChat(userId, chatId);
     if (!chat) return null;
     const runtime = this.runtimes.get(chatId);
     const messages = runtime
       ? runtime.transcript.messages
       : chat.sessionFile
-        ? readTranscript(join(this.options.dataDir, chat.sessionFile), this.sessionDir(chat.userId), this.workspaceDir(chat))
+        ? readTranscript(
+            join(this.options.dataDir, chat.sessionFile),
+            this.sessionDir(chat.userId),
+            this.workspaceDir(chat),
+          )
         : [];
-    return { type: "snapshot", chat: this.summary(chat), messages, streaming: runtime?.transcript.streaming ?? null };
+    return {
+      type: "snapshot",
+      chat: this.summary(chat),
+      messages,
+      streaming: runtime?.transcript.streaming ?? null,
+    };
   }
 
   /** Aborts runs in progress and disposes every Pi session. */
   async shutdown() {
     this.closing = true;
     await Promise.allSettled(this.loading.values());
-    await Promise.allSettled([...this.runtimes.values()].map((runtime) => runtime.session.abort()));
+    await Promise.allSettled(
+      [...this.runtimes.values()].map((runtime) => runtime.session.abort()),
+    );
     await Promise.allSettled(this.runs);
     for (const chatId of [...this.runtimes.keys()]) this.unload(chatId);
   }
@@ -138,7 +181,11 @@ export class ChatService {
     const run = runtime.session
       .prompt(message, { expandPromptTemplates: false })
       .catch((error: unknown) => {
-        this.emit(chat.id, runtime, { type: "run_error", chatId: chat.id, error: errorMessage(error) });
+        this.emit(chat.id, runtime, {
+          type: "run_error",
+          chatId: chat.id,
+          error: errorMessage(error),
+        });
       })
       .finally(() => {
         this.runs.delete(run);
@@ -154,7 +201,9 @@ export class ChatService {
     if (loaded) return Promise.resolve(loaded);
     let loading = this.loading.get(chat.id);
     if (!loading) {
-      loading = this.loadRuntime(chat).finally(() => this.loading.delete(chat.id));
+      loading = this.loadRuntime(chat).finally(() =>
+        this.loading.delete(chat.id),
+      );
       this.loading.set(chat.id, loading);
     }
     return loading;
@@ -177,7 +226,8 @@ export class ChatService {
     });
     if (session.sessionFile) {
       const sessionFile = relative(dataDir, session.sessionFile);
-      if (sessionFile !== chat.sessionFile) this.options.db.setSessionFile(chat.id, sessionFile);
+      if (sessionFile !== chat.sessionFile)
+        this.options.db.setSessionFile(chat.id, sessionFile);
     }
 
     const runtime: Runtime = {
@@ -191,12 +241,18 @@ export class ChatService {
       agentActive: false,
       unsubscribe: () => {},
     };
-    runtime.unsubscribe = session.subscribe((event) => this.handleEvent(chat.id, runtime, event));
+    runtime.unsubscribe = session.subscribe((event) =>
+      this.handleEvent(chat.id, runtime, event),
+    );
     this.runtimes.set(chat.id, runtime);
     return runtime;
   }
 
-  private handleEvent(chatId: string, runtime: Runtime, event: AgentSessionEvent) {
+  private handleEvent(
+    chatId: string,
+    runtime: Runtime,
+    event: AgentSessionEvent,
+  ) {
     switch (event.type) {
       case "agent_start":
         runtime.agentActive = true;
@@ -214,12 +270,17 @@ export class ChatService {
       }
       case "message_end": {
         const message = toChatMessage(event.message);
-        if (message) this.emit(chatId, runtime, { type: "message", chatId, message });
+        if (message)
+          this.emit(chatId, runtime, { type: "message", chatId, message });
         break;
       }
       case "compaction_end":
         if (event.result) {
-          const message = compactionMarker(event.result.summary, event.result.tokensBefore, Date.now());
+          const message = compactionMarker(
+            event.result.summary,
+            event.result.tokensBefore,
+            Date.now(),
+          );
           this.emit(chatId, runtime, { type: "message", chatId, message });
         }
         break;
@@ -240,18 +301,25 @@ export class ChatService {
   }
 
   private status(chatId: string): ChatStatus {
-    return this.prompting.has(chatId) || this.runtimes.get(chatId)?.agentActive ? "running" : "idle";
+    return this.prompting.has(chatId) || this.runtimes.get(chatId)?.agentActive
+      ? "running"
+      : "idle";
   }
 
   /** Publishes the chat if its status changed (or always, with force) and manages idle unloading. */
   private refreshStatus(chatId: string, force = false) {
     const status = this.status(chatId);
-    if (force || this.publishedStatus.get(chatId) !== status) this.publishChat(chatId);
+    if (force || this.publishedStatus.get(chatId) !== status)
+      this.publishChat(chatId);
 
     const runtime = this.runtimes.get(chatId);
     if (!runtime) return;
     clearTimeout(runtime.idleTimer);
-    if (status === "idle") runtime.idleTimer = setTimeout(() => this.unload(chatId), this.idleTimeoutMs);
+    if (status === "idle")
+      runtime.idleTimer = setTimeout(
+        () => this.unload(chatId),
+        this.idleTimeoutMs,
+      );
   }
 
   private unload(chatId: string) {
@@ -268,7 +336,10 @@ export class ChatService {
     if (!chat) return;
     const summary = this.summary(chat);
     this.publishedStatus.set(chatId, summary.status);
-    this.options.publish(userTopic(chat.userId), { type: "chat_updated", chat: summary });
+    this.options.publish(userTopic(chat.userId), {
+      type: "chat_updated",
+      chat: summary,
+    });
   }
 
   private getChat(userId: string, chatId: string): ChatRow {
@@ -299,7 +370,9 @@ export class ChatService {
 
 function titleFrom(message: string): string {
   const line = message.trim().split("\n")[0].trim();
-  return line.length > TITLE_LENGTH ? `${line.slice(0, TITLE_LENGTH - 1)}…` : line;
+  return line.length > TITLE_LENGTH
+    ? `${line.slice(0, TITLE_LENGTH - 1)}…`
+    : line;
 }
 
 export function errorMessage(error: unknown): string {

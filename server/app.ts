@@ -11,7 +11,13 @@ import type {
   HealthResponse,
   ServerMessage,
 } from "../shared/protocol";
-import { ChatService, chatTopic, errorMessage, HttpError, userTopic } from "./chats";
+import {
+  ChatService,
+  chatTopic,
+  errorMessage,
+  HttpError,
+  userTopic,
+} from "./chats";
 import type { Config } from "./config";
 import { DEFAULT_USER_ID, Db } from "./db";
 import { listModels, type PiHost } from "./pi";
@@ -48,10 +54,15 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
     pi,
     dataDir: config.dataDir,
     idleTimeoutMs,
-    publish: (topic, message) => server?.publish(topic, JSON.stringify(message)),
+    publish: (topic, message) =>
+      server?.publish(topic, JSON.stringify(message)),
   });
 
-  async function handleApi(req: Request, url: URL, srv: Server<SocketData>): Promise<Response | undefined> {
+  async function handleApi(
+    req: Request,
+    url: URL,
+    srv: Server<SocketData>,
+  ): Promise<Response | undefined> {
     // Until there's a login flow, whoever sends a request is the default user.
     const userId = DEFAULT_USER_ID;
     const path = url.pathname;
@@ -63,19 +74,33 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
       throw new HttpError(400, "Expected a WebSocket upgrade");
     }
     if (path === "/api/health" && method === "GET") {
-      return json({ ok: true, name: "clnk", version: packageJson.version } satisfies HealthResponse);
+      return json({
+        ok: true,
+        name: "clnk",
+        version: packageJson.version,
+      } satisfies HealthResponse);
     }
-    if (path === "/api/models" && method === "GET") return json(await listModels(pi));
-    if (path === "/api/chats" && method === "GET") return json({ chats: chats.listChats(userId) } satisfies ChatsResponse);
+    if (path === "/api/models" && method === "GET")
+      return json(await listModels(pi));
+    if (path === "/api/chats" && method === "GET")
+      return json({ chats: chats.listChats(userId) } satisfies ChatsResponse);
     if (path === "/api/chats" && method === "POST") {
       const body = await readJson(req);
-      const chat = await chats.createChat(userId, parseModel(body.model), parseMessage(body.message));
+      const chat = await chats.createChat(
+        userId,
+        parseModel(body.model),
+        parseMessage(body.message),
+      );
       return json({ chat } satisfies CreateChatResponse, 201);
     }
     const messagesMatch = path.match(/^\/api\/chats\/([^/]+)\/messages$/);
     if (messagesMatch && method === "POST") {
       const body = await readJson(req);
-      await chats.sendMessage(userId, decodeURIComponent(messagesMatch[1]), parseMessage(body.message));
+      await chats.sendMessage(
+        userId,
+        decodeURIComponent(messagesMatch[1]),
+        parseMessage(body.message),
+      );
       return json({ ok: true }, 202);
     }
     throw new HttpError(404, "Not found");
@@ -86,7 +111,8 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
     port: config.port,
     async fetch(req, srv) {
       const url = new URL(req.url);
-      if (!url.pathname.startsWith("/api/")) return serveWeb(config.webDir, url);
+      if (!url.pathname.startsWith("/api/"))
+        return serveWeb(config.webDir, url);
       let response: Response | undefined;
       try {
         response = await handleApi(req, url, srv);
@@ -94,9 +120,13 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
       } catch (error) {
         const status = error instanceof HttpError ? error.status : 500;
         if (status === 500) console.error(error);
-        response = json({ error: errorMessage(error) } satisfies ErrorResponse, status);
+        response = json(
+          { error: errorMessage(error) } satisfies ErrorResponse,
+          status,
+        );
       }
-      for (const [name, value] of Object.entries(CORS_HEADERS)) response.headers.set(name, value);
+      for (const [name, value] of Object.entries(CORS_HEADERS))
+        response.headers.set(name, value);
       return response;
     },
     websocket: {
@@ -113,7 +143,8 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
         }
         if (msg.type === "subscribe") {
           const snapshot = chats.snapshot(ws.data.userId, msg.chatId);
-          if (!snapshot) return send(ws, { type: "error", error: "Chat not found" });
+          if (!snapshot)
+            return send(ws, { type: "error", error: "Chat not found" });
           // Snapshot first, then live events: both happen in this tick, so nothing falls in between.
           send(ws, snapshot);
           ws.subscribe(chatTopic(msg.chatId));
@@ -146,13 +177,15 @@ function json(body: unknown, status = 200): Response {
 async function readJson(req: Request): Promise<Record<string, unknown>> {
   try {
     const body = await req.json();
-    if (body && typeof body === "object") return body as Record<string, unknown>;
+    if (body && typeof body === "object")
+      return body as Record<string, unknown>;
   } catch {}
   throw new HttpError(400, "Expected a JSON object body");
 }
 
 function parseMessage(value: unknown): string {
-  if (typeof value !== "string" || !value.trim()) throw new HttpError(400, "message must be a non-empty string");
+  if (typeof value !== "string" || !value.trim())
+    throw new HttpError(400, "message must be a non-empty string");
   return value;
 }
 
@@ -166,9 +199,12 @@ function parseModel(value: unknown): CreateChatRequest["model"] {
 
 async function serveWeb(webDir: string | null, url: URL): Promise<Response> {
   if (!webDir) {
-    return new Response("Web UI is not built. Run `bun run build`, or use the Vite dev server (`bun run dev`).", {
-      status: 404,
-    });
+    return new Response(
+      "Web UI is not built. Run `bun run build`, or use the Vite dev server (`bun run dev`).",
+      {
+        status: 404,
+      },
+    );
   }
   const path = normalize(join(webDir, decodeURIComponent(url.pathname)));
   if (path.startsWith(webDir + sep)) {

@@ -6,7 +6,16 @@ import { streamMessage } from "./stream";
 
 /** Pi's partial message after the provider has parsed further than the event being delivered. */
 function partial(...content: AssistantContent[]) {
-  return { role: "assistant", content, api: "x", provider: "p", model: "m", usage: {}, stopReason: "pending", timestamp: 1 };
+  return {
+    role: "assistant",
+    content,
+    api: "x",
+    provider: "p",
+    model: "m",
+    usage: {},
+    stopReason: "pending",
+    timestamp: 1,
+  };
 }
 
 const ahead = partial(
@@ -15,8 +24,14 @@ const ahead = partial(
   { type: "toolCall", id: "t1", name: "bash", arguments: { command: "l" } },
 );
 
-function update(assistantMessageEvent: Record<string, unknown>): AgentSessionEvent {
-  return { type: "message_update", message: ahead, assistantMessageEvent: { partial: ahead, ...assistantMessageEvent } } as never;
+function update(
+  assistantMessageEvent: Record<string, unknown>,
+): AgentSessionEvent {
+  return {
+    type: "message_update",
+    message: ahead,
+    assistantMessageEvent: { partial: ahead, ...assistantMessageEvent },
+  } as never;
 }
 
 test("streams from events only, even when Pi's partial message is ahead of them", () => {
@@ -25,7 +40,11 @@ test("streams from events only, even when Pi's partial message is ahead of them"
     update({ type: "thinking_start", contentIndex: 0 }),
     update({ type: "thinking_delta", contentIndex: 0, delta: "\nThe" }),
     update({ type: "thinking_delta", contentIndex: 0, delta: " user wants" }),
-    update({ type: "thinking_end", contentIndex: 0, content: "\nThe user wants" }),
+    update({
+      type: "thinking_end",
+      contentIndex: 0,
+      content: "\nThe user wants",
+    }),
     update({ type: "text_start", contentIndex: 1 }),
     update({ type: "text_delta", contentIndex: 1, delta: "Hi" }),
   ];
@@ -37,11 +56,18 @@ test("streams from events only, even when Pi's partial message is ahead of them"
     update({
       type: "toolcall_end",
       contentIndex: 2,
-      toolCall: { type: "toolCall", id: "t1", name: "bash", arguments: { command: "ls" } },
+      toolCall: {
+        type: "toolCall",
+        id: "t1",
+        name: "bash",
+        arguments: { command: "ls" },
+      },
     }),
   ];
   const messages = (list: AgentSessionEvent[]) =>
-    list.map((event) => streamMessage("c1", event)).filter((msg): msg is ServerMessage => msg !== null);
+    list
+      .map((event) => streamMessage("c1", event))
+      .filter((msg): msg is ServerMessage => msg !== null);
 
   const midway = messages(events).reduce(applyServerMessage, emptyTranscript);
   expect(midway.streaming?.content).toEqual([
@@ -58,6 +84,11 @@ test("streams from events only, even when Pi's partial message is ahead of them"
 });
 
 test("ignores events that aren't part of a streaming assistant message", () => {
-  expect(streamMessage("c1", { type: "message_start", message: { role: "user", content: "hi", timestamp: 1 } } as never)).toBeNull();
+  expect(
+    streamMessage("c1", {
+      type: "message_start",
+      message: { role: "user", content: "hi", timestamp: 1 },
+    } as never),
+  ).toBeNull();
   expect(streamMessage("c1", { type: "agent_start" } as never)).toBeNull();
 });

@@ -14,7 +14,13 @@ interface ChatViewProps {
   onMenu: () => void;
 }
 
-export function ChatView({ client, chatId, chat, chatsLoaded, onMenu }: ChatViewProps) {
+export function ChatView({
+  client,
+  chatId,
+  chat,
+  chatsLoaded,
+  onMenu,
+}: ChatViewProps) {
   const transcript = useTranscript(client, chatId);
   const running = chat?.status === "running";
 
@@ -29,9 +35,18 @@ export function ChatView({ client, chatId, chat, chatsLoaded, onMenu }: ChatView
 
   return (
     <>
-      <Header title={chat?.title ?? ""} model={chat?.model} running={running} onMenu={onMenu} />
+      <Header
+        title={chat?.title ?? ""}
+        model={chat?.model}
+        running={running}
+        onMenu={onMenu}
+      />
       {transcript.loaded ? (
-        <Transcript messages={transcript.messages} streaming={transcript.streaming} running={running} />
+        <Transcript
+          messages={transcript.messages}
+          streaming={transcript.streaming}
+          running={running}
+        />
       ) : (
         <div className="empty">
           <span className="spinner" />
@@ -40,7 +55,9 @@ export function ChatView({ client, chatId, chat, chatsLoaded, onMenu }: ChatView
       {transcript.error && <div className="run-error">{transcript.error}</div>}
       <Composer
         key={chatId}
-        blockedReason={running ? "Pi is working… you can send when it's done" : undefined}
+        blockedReason={
+          running ? "Pi is working… you can send when it's done" : undefined
+        }
         autoFocus
         onSend={(text) => client.sendMessage(chatId, text).then(() => {})}
       />

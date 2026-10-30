@@ -69,7 +69,10 @@ export class BackendClient {
   }
 
   createChat(body: CreateChatRequest) {
-    return this.request<CreateChatResponse>("/api/chats", { method: "POST", body: JSON.stringify(body) });
+    return this.request<CreateChatResponse>("/api/chats", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
   }
 
   sendMessage(chatId: string, message: string) {
@@ -85,7 +88,8 @@ export class BackendClient {
       headers: { "Content-Type": "application/json", ...init?.headers },
     });
     const body = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(body?.error ?? `Request failed (${response.status})`);
+    if (!response.ok)
+      throw new Error(body?.error ?? `Request failed (${response.status})`);
     return body as T;
   }
 
@@ -96,7 +100,8 @@ export class BackendClient {
     this.ws = ws;
     ws.onopen = () => {
       this.retries = 0;
-      for (const chatId of this.subscriptions.keys()) this.send({ type: "subscribe", chatId });
+      for (const chatId of this.subscriptions.keys())
+        this.send({ type: "subscribe", chatId });
       this.setStatus("open");
     };
     ws.onmessage = (event) => {
@@ -121,13 +126,15 @@ export class BackendClient {
 
   /** Mobile browsers drop sockets in the background; retry right away when the app comes back. */
   private reconnectNow = () => {
-    if (this.closed || this.ws || document.visibilityState !== "visible") return;
+    if (this.closed || this.ws || document.visibilityState !== "visible")
+      return;
     clearTimeout(this.retryTimer);
     this.open();
   };
 
   private send(msg: ClientMessage) {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+    if (this.ws?.readyState === WebSocket.OPEN)
+      this.ws.send(JSON.stringify(msg));
   }
 
   private setStatus(status: ConnectionStatus) {
@@ -146,7 +153,9 @@ function webSocketUrl(baseUrl: string) {
 /** Accepts "host:port" or a full URL; returns an origin-like URL without a trailing slash. */
 export function normalizeBackendUrl(input: string): string {
   const trimmed = input.trim();
-  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const withScheme = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : `http://${trimmed}`;
   const url = new URL(withScheme);
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
@@ -157,5 +166,6 @@ export async function checkBackend(baseUrl: string): Promise<void> {
     const response = await fetch(`${baseUrl}/api/health`);
     health = await response.json();
   } catch {}
-  if (health?.name !== "clnk") throw new Error(`Couldn't reach a clnk backend at ${baseUrl}`);
+  if (health?.name !== "clnk")
+    throw new Error(`Couldn't reach a clnk backend at ${baseUrl}`);
 }

@@ -11,9 +11,13 @@ export interface Config {
   webDir: string | null;
 }
 
-export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
+export function loadConfig(
+  env: Record<string, string | undefined> = process.env,
+): Config {
   const dataHome = env.XDG_DATA_HOME || join(homedir(), ".local", "share");
-  const webDir = resolve(env.CLNK_WEB_DIR || join(import.meta.dir, "..", "dist"));
+  const webDir = resolve(
+    env.CLNK_WEB_DIR || join(import.meta.dir, "..", "dist"),
+  );
   return {
     // No auth yet and Pi can run commands, so only listen on loopback unless told otherwise.
     host: env.HOST || "127.0.0.1",

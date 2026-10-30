@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { AssistantMessage, ChatSummary, ServerMessage } from "./protocol";
-import { applyServerMessage, emptyTranscript, type TranscriptState } from "./transcript";
+import {
+  applyServerMessage,
+  emptyTranscript,
+  type TranscriptState,
+} from "./transcript";
 
 const chat: ChatSummary = {
   id: "c1",
@@ -11,7 +15,14 @@ const chat: ChatSummary = {
   updatedAt: 0,
 };
 
-const partial: AssistantMessage = { role: "assistant", content: [], provider: "p", model: "m", stopReason: "pending", timestamp: 1 };
+const partial: AssistantMessage = {
+  role: "assistant",
+  content: [],
+  provider: "p",
+  model: "m",
+  stopReason: "pending",
+  timestamp: 1,
+};
 
 function apply(...messages: ServerMessage[]): TranscriptState {
   return messages.reduce(applyServerMessage, emptyTranscript);
@@ -26,25 +37,60 @@ describe("applyServerMessage", () => {
       messages: [{ role: "user", content: "hi", timestamp: 0 }],
       streaming: null,
     });
-    expect(state).toEqual({ loaded: true, messages: [{ role: "user", content: "hi", timestamp: 0 }], streaming: null, error: null });
+    expect(state).toEqual({
+      loaded: true,
+      messages: [{ role: "user", content: "hi", timestamp: 0 }],
+      streaming: null,
+      error: null,
+    });
   });
 
   test("builds the streaming message from blocks and deltas", () => {
     const state = apply(
       { type: "snapshot", chat, messages: [], streaming: null },
       { type: "stream_start", chatId: "c1", message: partial },
-      { type: "stream_block", chatId: "c1", index: 0, block: { type: "thinking", thinking: "" } },
+      {
+        type: "stream_block",
+        chatId: "c1",
+        index: 0,
+        block: { type: "thinking", thinking: "" },
+      },
       { type: "stream_delta", chatId: "c1", index: 0, delta: "Hmm, " },
       { type: "stream_delta", chatId: "c1", index: 0, delta: "ok." },
-      { type: "stream_block", chatId: "c1", index: 1, block: { type: "text", text: "" } },
+      {
+        type: "stream_block",
+        chatId: "c1",
+        index: 1,
+        block: { type: "text", text: "" },
+      },
       { type: "stream_delta", chatId: "c1", index: 1, delta: "Hello" },
-      { type: "stream_block", chatId: "c1", index: 2, block: { type: "toolCall", id: "t1", name: "bash", arguments: {} } },
-      { type: "stream_block", chatId: "c1", index: 2, block: { type: "toolCall", id: "t1", name: "bash", arguments: { command: "ls" } } },
+      {
+        type: "stream_block",
+        chatId: "c1",
+        index: 2,
+        block: { type: "toolCall", id: "t1", name: "bash", arguments: {} },
+      },
+      {
+        type: "stream_block",
+        chatId: "c1",
+        index: 2,
+        block: {
+          type: "toolCall",
+          id: "t1",
+          name: "bash",
+          arguments: { command: "ls" },
+        },
+      },
     );
     expect(state.streaming?.content).toEqual([
       { type: "thinking", thinking: "Hmm, ok." },
       { type: "text", text: "Hello" },
-      { type: "toolCall", id: "t1", name: "bash", arguments: { command: "ls" } },
+      {
+        type: "toolCall",
+        id: "t1",
+        name: "bash",
+        arguments: { command: "ls" },
+      },
     ]);
   });
 
@@ -58,7 +104,11 @@ describe("applyServerMessage", () => {
   });
 
   test("a finished assistant message replaces the streaming one", () => {
-    const final: AssistantMessage = { ...partial, content: [{ type: "text", text: "Done" }], stopReason: "stop" };
+    const final: AssistantMessage = {
+      ...partial,
+      content: [{ type: "text", text: "Done" }],
+      stopReason: "stop",
+    };
     const state = apply(
       { type: "stream_start", chatId: "c1", message: partial },
       { type: "message", chatId: "c1", message: final },
@@ -71,11 +121,26 @@ describe("applyServerMessage", () => {
     let state = apply(
       { type: "run_error", chatId: "c1", error: "boom" },
       { type: "stream_start", chatId: "c1", message: partial },
-      { type: "message", chatId: "c1", message: { role: "toolResult", toolCallId: "t1", toolName: "bash", content: [], isError: false, timestamp: 2 } },
+      {
+        type: "message",
+        chatId: "c1",
+        message: {
+          role: "toolResult",
+          toolCallId: "t1",
+          toolName: "bash",
+          content: [],
+          isError: false,
+          timestamp: 2,
+        },
+      },
     );
     expect(state.streaming).not.toBeNull();
     expect(state.error).toBe("boom");
-    state = applyServerMessage(state, { type: "message", chatId: "c1", message: { role: "user", content: "again", timestamp: 3 } });
+    state = applyServerMessage(state, {
+      type: "message",
+      chatId: "c1",
+      message: { role: "user", content: "again", timestamp: 3 },
+    });
     expect(state.error).toBeNull();
   });
 });

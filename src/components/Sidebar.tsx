@@ -18,7 +18,15 @@ const CONNECTION_LABEL: Record<ConnectionStatus, string> = {
   offline: "Reconnecting…",
 };
 
-export function Sidebar({ chats, route, connection, backendUrl, open, onClose, onChangeBackend }: SidebarProps) {
+export function Sidebar({
+  chats,
+  route,
+  connection,
+  backendUrl,
+  open,
+  onClose,
+  onChangeBackend,
+}: SidebarProps) {
   const activeId = route.name === "chat" ? route.chatId : null;
   return (
     <>
@@ -43,18 +51,29 @@ export function Sidebar({ chats, route, connection, backendUrl, open, onClose, o
                 }}
               >
                 <span className="chat-title">{chat.title}</span>
-                {chat.status === "running" && <span className="spinner" aria-label="Running" />}
+                {chat.status === "running" && (
+                  <span className="spinner" aria-label="Running" />
+                )}
               </a>
             </li>
           ))}
-          {chats?.length === 0 && <li className="chat-list-empty">No chats yet</li>}
+          {chats?.length === 0 && (
+            <li className="chat-list-empty">No chats yet</li>
+          )}
         </ul>
         <div className="sidebar-footer">
-          <span className={`connection connection-${connection}`} title={CONNECTION_LABEL[connection]} />
+          <span
+            className={`connection connection-${connection}`}
+            title={CONNECTION_LABEL[connection]}
+          />
           <span className="backend-url" title={backendUrl}>
             {backendUrl.replace(/^https?:\/\//, "")}
           </span>
-          <button type="button" className="link-button" onClick={onChangeBackend}>
+          <button
+            type="button"
+            className="link-button"
+            onClick={onChangeBackend}
+          >
             Change
           </button>
         </div>

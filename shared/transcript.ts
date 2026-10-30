@@ -1,4 +1,9 @@
-import type { AssistantContent, AssistantMessage, ChatMessage, ServerMessage } from "./protocol";
+import type {
+  AssistantContent,
+  AssistantMessage,
+  ChatMessage,
+  ServerMessage,
+} from "./protocol";
 
 /** What a client knows about one chat's transcript. */
 export interface TranscriptState {
@@ -11,13 +16,26 @@ export interface TranscriptState {
   error: string | null;
 }
 
-export const emptyTranscript: TranscriptState = { loaded: false, messages: [], streaming: null, error: null };
+export const emptyTranscript: TranscriptState = {
+  loaded: false,
+  messages: [],
+  streaming: null,
+  error: null,
+};
 
 /** Applies a server message that belongs to this chat. Callers filter by chat id. */
-export function applyServerMessage(state: TranscriptState, msg: ServerMessage): TranscriptState {
+export function applyServerMessage(
+  state: TranscriptState,
+  msg: ServerMessage,
+): TranscriptState {
   switch (msg.type) {
     case "snapshot":
-      return { loaded: true, messages: msg.messages, streaming: msg.streaming, error: null };
+      return {
+        loaded: true,
+        messages: msg.messages,
+        streaming: msg.streaming,
+        error: null,
+      };
     case "message": {
       const isAssistant = msg.message.role === "assistant";
       return {
@@ -33,8 +51,10 @@ export function applyServerMessage(state: TranscriptState, msg: ServerMessage): 
       return updateBlock(state, msg.index, () => msg.block);
     case "stream_delta":
       return updateBlock(state, msg.index, (block) => {
-        if (block?.type === "text") return { ...block, text: block.text + msg.delta };
-        if (block?.type === "thinking") return { ...block, thinking: block.thinking + msg.delta };
+        if (block?.type === "text")
+          return { ...block, text: block.text + msg.delta };
+        if (block?.type === "thinking")
+          return { ...block, thinking: block.thinking + msg.delta };
         return block;
       });
     case "run_error":

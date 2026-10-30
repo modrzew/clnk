@@ -1,6 +1,10 @@
 import { useEffect, useReducer, useState, useSyncExternalStore } from "react";
 import type { ChatSummary, ServerMessage } from "../../shared/protocol";
-import { applyServerMessage, emptyTranscript, type TranscriptState } from "../../shared/transcript";
+import {
+  applyServerMessage,
+  emptyTranscript,
+  type TranscriptState,
+} from "../../shared/transcript";
 import type { BackendClient, ConnectionStatus } from "./client";
 
 export function useConnectionStatus(client: BackendClient): ConnectionStatus {
@@ -19,7 +23,11 @@ export function useChats(client: BackendClient): ChatSummary[] | null {
         if (msg.type === "chats") setChats(sortChats(msg.chats));
         if (msg.type === "chat_updated" || msg.type === "snapshot") {
           const chat = msg.chat;
-          setChats((prev) => prev && sortChats([chat, ...prev.filter((c) => c.id !== chat.id)]));
+          setChats(
+            (prev) =>
+              prev &&
+              sortChats([chat, ...prev.filter((c) => c.id !== chat.id)]),
+          );
         }
       }),
     [client],
@@ -32,9 +40,13 @@ function sortChats(chats: ChatSummary[]) {
 }
 
 /** Live transcript of one chat. Updates are applied once per animation frame while streaming. */
-export function useTranscript(client: BackendClient, chatId: string): TranscriptState {
+export function useTranscript(
+  client: BackendClient,
+  chatId: string,
+): TranscriptState {
   const [state, dispatch] = useReducer(
-    (current: TranscriptState, batch: ServerMessage[]) => batch.reduce(applyServerMessage, current),
+    (current: TranscriptState, batch: ServerMessage[]) =>
+      batch.reduce(applyServerMessage, current),
     emptyTranscript,
   );
   useEffect(() => {
@@ -47,7 +59,12 @@ export function useTranscript(client: BackendClient, chatId: string): Transcript
       dispatch(batch);
     };
     const offMessage = client.onMessage((msg) => {
-      const id = msg.type === "snapshot" ? msg.chat.id : "chatId" in msg ? msg.chatId : null;
+      const id =
+        msg.type === "snapshot"
+          ? msg.chat.id
+          : "chatId" in msg
+            ? msg.chatId
+            : null;
       if (id !== chatId) return;
       queue.push(msg);
       if (!frame) frame = requestAnimationFrame(flush);
@@ -73,9 +90,12 @@ export function useRoute(): Route {
     () => window.location.hash,
   );
   const match = hash.match(/^#\/chat\/(.+)$/);
-  return match ? { name: "chat", chatId: decodeURIComponent(match[1]) } : { name: "new" };
+  return match
+    ? { name: "chat", chatId: decodeURIComponent(match[1]) }
+    : { name: "new" };
 }
 
 export function navigate(route: Route) {
-  window.location.hash = route.name === "chat" ? `/chat/${encodeURIComponent(route.chatId)}` : "/";
+  window.location.hash =
+    route.name === "chat" ? `/chat/${encodeURIComponent(route.chatId)}` : "/";
 }

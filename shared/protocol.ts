@@ -41,7 +41,14 @@ export interface AssistantMessage {
   content: AssistantContent[];
   provider: string;
   model: string;
-  stopReason: "pending" | "stop" | "length" | "toolUse" | "error" | "aborted" | "deferred";
+  stopReason:
+    | "pending"
+    | "stop"
+    | "length"
+    | "toolUse"
+    | "error"
+    | "aborted"
+    | "deferred";
   errorMessage?: string;
   timestamp: number;
 }
@@ -72,7 +79,12 @@ export interface CompactionMarker {
   timestamp: number;
 }
 
-export type ChatMessage = UserMessage | AssistantMessage | ToolResultMessage | CustomMessage | CompactionMarker;
+export type ChatMessage =
+  | UserMessage
+  | AssistantMessage
+  | ToolResultMessage
+  | CustomMessage
+  | CompactionMarker;
 
 export type ChatStatus = "idle" | "running";
 
@@ -137,7 +149,9 @@ export interface ErrorResponse {
 
 // WebSocket: /api/ws, one JSON message per frame.
 
-export type ClientMessage = { type: "subscribe"; chatId: string } | { type: "unsubscribe"; chatId: string };
+export type ClientMessage =
+  | { type: "subscribe"; chatId: string }
+  | { type: "unsubscribe"; chatId: string };
 
 export type ServerMessage =
   /** First message on every connection: all of the user's chats. */
@@ -145,13 +159,23 @@ export type ServerMessage =
   /** Sent to every connected client of the chat's owner when a chat is created or changes. */
   | { type: "chat_updated"; chat: ChatSummary }
   /** Full state of a chat, sent in reply to subscribe. Replaces whatever the client had. */
-  | { type: "snapshot"; chat: ChatSummary; messages: ChatMessage[]; streaming: AssistantMessage | null }
+  | {
+      type: "snapshot";
+      chat: ChatSummary;
+      messages: ChatMessage[];
+      streaming: AssistantMessage | null;
+    }
   /** A finished message was appended. An assistant message replaces the streaming one. */
   | { type: "message"; chatId: string; message: ChatMessage }
   /** An assistant message started streaming. */
   | { type: "stream_start"; chatId: string; message: AssistantMessage }
   /** A content block of the streaming message was added or finalized. */
-  | { type: "stream_block"; chatId: string; index: number; block: AssistantContent }
+  | {
+      type: "stream_block";
+      chatId: string;
+      index: number;
+      block: AssistantContent;
+    }
   /** Text appended to a text or thinking block of the streaming message. */
   | { type: "stream_delta"; chatId: string; index: number; delta: string }
   /** A run failed without producing an assistant error message. */
