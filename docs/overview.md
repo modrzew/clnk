@@ -41,11 +41,14 @@ A frontend for Pi agent harness that allows managing multiple chats and projects
 
 ### Milestone 4
 
-- support for images (uploading and rendering)
-- support for file attachments
-- multi user support for chats and projects
 - MacOS and Android apps
 - notification (desktop, web, mobile) when chat finishes
+
+### Milestone 5
+
+- support for images (uploading and rendering)
+- support for file attachments in chats
+- multi user support for chats and projects
 
 ### Non goals
 
