@@ -11,12 +11,42 @@
 .title {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   margin: 0;
   font-size: 15px;
   font-weight: 600;
+}
+
+.parent,
+.titleText {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.parent {
+  flex: 0 1 auto;
+  max-width: 45%;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.parent:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.separator {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.titleText {
+  flex: 1 1 auto;
 }
 
 /* Only on mobile, where the sidebar is a drawer. */

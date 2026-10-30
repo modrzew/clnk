@@ -26,10 +26,12 @@ import {
   hasModel,
   openChatSession,
   type PiHost,
+  type ProjectHooks,
   readTranscript,
   toChatMessage,
   transcriptFromEntries,
 } from "./pi";
+import type { ProjectService } from "./projects";
 import { streamMessage, toolOutputMessage } from "./stream";
 
 export type Publish = (topic: string, message: ServerMessage) => void;
@@ -62,6 +64,7 @@ type Snapshot = Extract<ServerMessage, { type: "snapshot" }>;
 export interface ChatServiceOptions {
   db: Db;
   pi: PiHost;
+  projects: ProjectService;
   dataDir: string;
   publish: Publish;
   /** How long an idle chat keeps its Pi session loaded. */
@@ -98,6 +101,7 @@ export class ChatService {
     userId: string,
     model: ModelRef,
     message: string,
+    projectId?: string,
   ): Promise<ChatSummary> {
     if (!message.trim()) throw new HttpError(400, "Message is empty");
     if (!hasModel(this.options.pi, model))
@@ -105,10 +109,13 @@ export class ChatService {
         400,
         `Model ${model.provider}/${model.id} is not available`,
       );
+    if (projectId !== undefined)
+      this.options.projects.getOpenProject(userId, projectId);
     const now = Date.now();
     const chat: ChatRow = {
       id: randomUUID(),
       userId,
+      projectId: projectId ?? null,
       title: titleFrom(message),
       model,
       sessionFile: null,
@@ -239,6 +246,8 @@ export class ChatService {
     this.addPrompting(chat.id, 1);
     this.options.db.touchChat(chat.id);
     this.refreshStatus(chat.id, true);
+    // Every time: the link may have gone with a pruned chat folder, or Pi removed it.
+    this.linkArtefacts(chat);
 
     let runtime: Runtime;
     try {
@@ -391,6 +400,9 @@ export class ChatService {
       sessionDir,
       sessionFile: chat.sessionFile ? join(dataDir, chat.sessionFile) : null,
       model: chat.model,
+      project: chat.projectId
+        ? this.projectHooks(chat.projectId, cwd)
+        : undefined,
     });
     if (session.sessionFile) {
       const sessionFile = relative(dataDir, session.sessionFile);
@@ -414,6 +426,28 @@ export class ChatService {
     this.runtimes.set(chat.id, runtime);
     this.refreshContext(chat.id, runtime);
     return runtime;
+  }
+
+  private projectHooks(projectId: string, cwd: string): ProjectHooks {
+    const { projects } = this.options;
+    return {
+      prompt: () => projects.prompt(projectId),
+      saveArtefact: (path, name) =>
+        projects.saveArtefact(projectId, cwd, path, name),
+    };
+  }
+
+  /** Pi can still work without the project's artefacts, so failing to link them doesn't stop a run. */
+  private linkArtefacts(chat: ChatRow) {
+    if (!chat.projectId) return;
+    try {
+      this.options.projects.linkArtefacts(
+        chat.projectId,
+        this.workspaceDir(chat),
+      );
+    } catch (error) {
+      console.warn(`Failed to link artefacts into chat ${chat.id}:`, error);
+    }
   }
 
   private handleEvent(
@@ -595,11 +629,16 @@ export class ChatService {
     return chat;
   }
 
-  /** A chat that isn't archived, so it can be continued. */
+  /** A chat that isn't archived, and isn't in an archived project, so it can be continued. */
   private getOpenChat(userId: string, chatId: string): ChatRow {
     const chat = this.getChat(userId, chatId);
     if (chat.archivedAt !== null)
       throw new HttpError(409, "Unarchive the chat to continue it");
+    const project = chat.projectId
+      ? this.options.db.getProjectById(chat.projectId)
+      : null;
+    if (project && project.archivedAt !== null)
+      throw new HttpError(409, "Unarchive the project to continue this chat");
     return chat;
   }
 
@@ -619,6 +658,7 @@ export class ChatService {
     return {
       id: chat.id,
       title: chat.title,
+      projectId: chat.projectId,
       model: chat.model,
       status: this.status(chat.id),
       archived: chat.archivedAt !== null,

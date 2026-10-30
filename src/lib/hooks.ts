@@ -2,6 +2,7 @@ import { useEffect, useReducer, useState, useSyncExternalStore } from "react";
 import type {
   ChatSummary,
   ModelsResponse,
+  ProjectSummary,
   ServerMessage,
 } from "../../shared/protocol";
 import {
@@ -41,6 +42,30 @@ export function useChats(client: BackendClient): ChatSummary[] | null {
   return chats;
 }
 
+/** All projects of the user, sorted by name. Null until the first connection. */
+export function useProjects(client: BackendClient): ProjectSummary[] | null {
+  const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  useEffect(
+    () =>
+      client.onMessage((msg) => {
+        if (msg.type === "projects") setProjects(sortProjects(msg.projects));
+        if (msg.type === "project_updated") {
+          const project = msg.project;
+          setProjects(
+            (prev) =>
+              prev &&
+              sortProjects([
+                project,
+                ...prev.filter((p) => p.id !== project.id),
+              ]),
+          );
+        }
+      }),
+    [client],
+  );
+  return projects;
+}
+
 export interface Models {
   models: ModelsResponse | null;
   error: string | null;
@@ -69,6 +94,15 @@ export function useModels(client: BackendClient): Models {
 
 function sortChats(chats: ChatSummary[]) {
   return [...chats].sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+function sortProjects(projects: ProjectSummary[]) {
+  return [...projects].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, {
+      sensitivity: "base",
+      numeric: true,
+    }),
+  );
 }
 
 /** Live transcript of one chat. Updates are applied once per animation frame while streaming. */
@@ -111,7 +145,10 @@ export function useTranscript(
   return state;
 }
 
-export type Route = { name: "new" } | { name: "chat"; chatId: string };
+export type Route =
+  | { name: "new" }
+  | { name: "chat"; chatId: string }
+  | { name: "project"; projectId: string };
 
 export function useRoute(): Route {
   const hash = useSyncExternalStore(
@@ -121,13 +158,25 @@ export function useRoute(): Route {
     },
     () => window.location.hash,
   );
-  const match = hash.match(/^#\/chat\/(.+)$/);
-  return match
-    ? { name: "chat", chatId: decodeURIComponent(match[1]) }
-    : { name: "new" };
+  const chat = hash.match(/^#\/chat\/(.+)$/);
+  if (chat) return { name: "chat", chatId: decodeURIComponent(chat[1]) };
+  const project = hash.match(/^#\/project\/(.+)$/);
+  if (project)
+    return { name: "project", projectId: decodeURIComponent(project[1]) };
+  return { name: "new" };
+}
+
+export function routeHref(route: Route): string {
+  switch (route.name) {
+    case "chat":
+      return `#/chat/${encodeURIComponent(route.chatId)}`;
+    case "project":
+      return `#/project/${encodeURIComponent(route.projectId)}`;
+    default:
+      return "#/";
+  }
 }
 
 export function navigate(route: Route) {
-  window.location.hash =
-    route.name === "chat" ? `/chat/${encodeURIComponent(route.chatId)}` : "/";
+  window.location.hash = routeHref(route);
 }

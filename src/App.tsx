@@ -2,13 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { ChatView } from "./components/ChatView";
 import { DisplaySettings } from "./components/DisplaySettings";
 import { NewChat } from "./components/NewChat";
+import { ProjectDialog } from "./components/ProjectDialog";
+import { ProjectView } from "./components/ProjectView";
 import { Setup } from "./components/Setup";
 import { Sidebar } from "./components/Sidebar";
 import { BackendClient } from "./lib/client";
 import {
+  navigate,
   useChats,
   useConnectionStatus,
   useModels,
+  useProjects,
   useRoute,
 } from "./lib/hooks";
 import styles from "./App.module.css";
@@ -65,17 +69,55 @@ function Shell({
 
   const connection = useConnectionStatus(client);
   const chats = useChats(client);
+  const projects = useProjects(client);
   const models = useModels(client);
   const route = useRoute();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const openSidebar = () => setSidebarOpen(true);
+  const findProject = (projectId: string | null | undefined) =>
+    projects?.find((project) => project.id === projectId);
+
+  let page;
+  if (route.name === "chat") {
+    const chat = chats?.find((chat) => chat.id === route.chatId);
+    page = (
+      <ChatView
+        key={route.chatId}
+        client={client}
+        chatId={route.chatId}
+        chat={chat}
+        project={findProject(chat?.projectId)}
+        chatsLoaded={chats !== null}
+        models={models.models?.models ?? []}
+        onMenu={openSidebar}
+      />
+    );
+  } else if (route.name === "project") {
+    page = (
+      <ProjectView
+        key={route.projectId}
+        client={client}
+        project={findProject(route.projectId)}
+        projectsLoaded={projects !== null}
+        chats={
+          chats?.filter((chat) => chat.projectId === route.projectId) ?? []
+        }
+        models={models}
+        onMenu={openSidebar}
+      />
+    );
+  } else {
+    page = <NewChat client={client} models={models} onMenu={openSidebar} />;
+  }
 
   return (
     <div className={styles.app}>
       <Sidebar
         chats={chats}
+        projects={projects}
         route={route}
         connection={connection}
         backendUrl={backendUrl}
@@ -85,6 +127,10 @@ function Shell({
         onOpenSettings={() => {
           setSidebarOpen(false);
           setSettingsOpen(true);
+        }}
+        onNewProject={() => {
+          setSidebarOpen(false);
+          setCreatingProject(true);
         }}
         onArchive={(chatId, archived) => {
           setError(null);
@@ -97,6 +143,15 @@ function Shell({
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
       />
+      {creatingProject && (
+        <ProjectDialog
+          onClose={() => setCreatingProject(false)}
+          onSave={async (fields) => {
+            const { project } = await client.createProject(fields);
+            navigate({ name: "project", projectId: project.id });
+          }}
+        />
+      )}
       <main className={styles.main}>
         {connection === "offline" && (
           <div className={styles.offlineBanner}>
@@ -108,19 +163,7 @@ function Shell({
             {error}
           </div>
         )}
-        {route.name === "chat" ? (
-          <ChatView
-            key={route.chatId}
-            client={client}
-            chatId={route.chatId}
-            chat={chats?.find((chat) => chat.id === route.chatId)}
-            chatsLoaded={chats !== null}
-            models={models.models?.models ?? []}
-            onMenu={openSidebar}
-          />
-        ) : (
-          <NewChat client={client} models={models} onMenu={openSidebar} />
-        )}
+        {page}
       </main>
     </div>
   );

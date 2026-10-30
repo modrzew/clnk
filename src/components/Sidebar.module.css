@@ -39,9 +39,34 @@
   background: var(--bg-hover);
 }
 
-.chatList {
+.lists {
   flex: 1;
   overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 8px 12px 0 18px;
+}
+
+.sectionHeader h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.sectionHeader button {
+  padding: 4px 6px;
+}
+
+.chatList {
   list-style: none;
   margin: 0;
   padding: 4px 8px;
@@ -83,12 +108,12 @@
 }
 
 @media (hover: hover) {
-  .chatList li:hover .chatAction,
+  .chatList li:hover > .chatAction,
   .chatAction:focus-visible {
     display: inline-flex;
   }
 
-  .chatList li:hover a {
+  .chatList li:hover > a {
     padding-right: 36px;
   }
 }
@@ -99,6 +124,49 @@
 
 .archivedToggle {
   margin-top: 8px;
+}
+
+.project {
+  display: flex;
+  align-items: center;
+}
+
+.expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 32px;
+  margin-right: -4px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+}
+
+.expand:hover {
+  color: var(--text);
+}
+
+.expand svg {
+  transition: transform 0.15s ease;
+}
+
+.expand[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.chatList .projectLink {
+  flex: 1;
+  min-width: 0;
+}
+
+.nested {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px 20px;
 }
 
 .chatTitle {
@@ -189,7 +257,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar,
-  .backdrop {
+  .backdrop,
+  .expand svg {
     transition: none;
   }
 }

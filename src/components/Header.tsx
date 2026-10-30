@@ -6,13 +6,21 @@ import ui from "./ui.module.css";
 
 interface HeaderProps {
   title: string;
+  /** Where the page belongs, e.g. a chat's project. Shown before the title. */
+  parent?: { label: string; href: string };
   running?: boolean;
   onMenu: () => void;
   /** Buttons at the end of the header. */
   children?: ReactNode;
 }
 
-export function Header({ title, running, onMenu, children }: HeaderProps) {
+export function Header({
+  title,
+  parent,
+  running,
+  onMenu,
+  children,
+}: HeaderProps) {
   return (
     <header className={styles.header}>
       <button
@@ -23,7 +31,19 @@ export function Header({ title, running, onMenu, children }: HeaderProps) {
       >
         ☰
       </button>
-      <h1 className={styles.title}>{title}</h1>
+      <h1 className={styles.title}>
+        {parent && (
+          <>
+            <a className={styles.parent} href={parent.href}>
+              {parent.label}
+            </a>
+            <span className={styles.separator} aria-hidden>
+              /
+            </span>
+          </>
+        )}
+        <span className={styles.titleText}>{title}</span>
+      </h1>
       {running && <Spinner label="Running" />}
       {children}
     </header>

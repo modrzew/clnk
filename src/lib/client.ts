@@ -3,6 +3,8 @@ import type {
   ClientMessage,
   CreateChatRequest,
   CreateChatResponse,
+  CreateProjectRequest,
+  CreateProjectResponse,
   ErrorResponse,
   HealthResponse,
   ModelsResponse,
@@ -10,6 +12,9 @@ import type {
   ServerMessage,
   UpdateChatRequest,
   UpdateChatResponse,
+  UpdateProjectRequest,
+  UpdateProjectResponse,
+  UploadArtefactResponse,
 } from "../../shared/protocol";
 
 export type ConnectionStatus = "connecting" | "open" | "offline";
@@ -107,6 +112,41 @@ export class BackendClient {
     });
   }
 
+  createProject(body: CreateProjectRequest) {
+    return this.request<CreateProjectResponse>("/api/projects", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  updateProject(projectId: string, body: UpdateProjectRequest) {
+    return this.request<UpdateProjectResponse>(projectPath(projectId), {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** Replaces the artefact with the file's name, if there is one. */
+  uploadArtefact(projectId: string, file: File) {
+    return this.request<UploadArtefactResponse>(
+      artefactPath(projectId, file.name),
+      {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+      },
+    );
+  }
+
+  deleteArtefact(projectId: string, name: string) {
+    return this.request(artefactPath(projectId, name), { method: "DELETE" });
+  }
+
+  /** Downloads the artefact when opened. */
+  artefactUrl(projectId: string, name: string) {
+    return this.baseUrl + artefactPath(projectId, name);
+  }
+
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(this.baseUrl + path, {
       ...init,
@@ -173,6 +213,10 @@ export class BackendClient {
 }
 
 const chatPath = (chatId: string) => `/api/chats/${encodeURIComponent(chatId)}`;
+const projectPath = (projectId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}`;
+const artefactPath = (projectId: string, name: string) =>
+  `${projectPath(projectId)}/artefacts/${encodeURIComponent(name)}`;
 
 function webSocketUrl(baseUrl: string) {
   const url = new URL(`${baseUrl}/api/ws`);

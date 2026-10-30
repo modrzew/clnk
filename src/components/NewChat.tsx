@@ -20,36 +20,56 @@ export function NewChat({
   models: Models;
   onMenu: () => void;
 }) {
+  return (
+    <>
+      <Header title="New chat" onMenu={onMenu} />
+      <div className={styles.newChat}>
+        <h2>What should Pi do?</h2>
+      </div>
+      <NewChatComposer client={client} models={models} />
+    </>
+  );
+}
+
+/** Starts a chat, in a project if given, and opens it. */
+export function NewChatComposer({
+  client,
+  models,
+  projectId,
+  placeholder,
+}: {
+  client: BackendClient;
+  models: Models;
+  projectId?: string;
+  placeholder?: string;
+}) {
   const [picked, setPicked] = useState<ModelRef | null>(null);
   const available = models.models?.models ?? [];
   const model = picked ?? initialModel(models.models);
 
   async function start(message: string) {
     if (!model) throw new Error("Pick a model first");
-    const { chat } = await client.createChat({ model, message });
+    const { chat } = await client.createChat({ model, message, projectId });
     localStorage.setItem(LAST_MODEL_KEY, modelKey(model));
     navigate({ name: "chat", chatId: chat.id });
   }
 
   return (
     <>
-      <Header title="New chat" onMenu={onMenu} />
-      <div className={styles.newChat}>
-        <h2>What should Pi do?</h2>
-        {models.error && !models.models && (
-          <div className={ui.errorBanner}>
-            Couldn't load models: {models.error}
-          </div>
-        )}
-        {models.models && available.length === 0 && (
-          <div className={ui.errorBanner}>
-            No models are available. Configure a provider for Pi on the backend
-            machine.
-          </div>
-        )}
-      </div>
+      {models.error && !models.models && (
+        <div className={ui.errorBanner}>
+          Couldn't load models: {models.error}
+        </div>
+      )}
+      {models.models && available.length === 0 && (
+        <div className={ui.errorBanner}>
+          No models are available. Configure a provider for Pi on the backend
+          machine.
+        </div>
+      )}
       <Composer
         blockedReason={model ? undefined : "Pick a model to start"}
+        placeholder={placeholder}
         autoFocus
         onSend={start}
       >

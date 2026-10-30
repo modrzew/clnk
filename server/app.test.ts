@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -15,6 +21,7 @@ import type {
   ChatSummary,
   ClientMessage,
   ModelRef,
+  ProjectSummary,
   ServerMessage,
 } from "../shared/protocol";
 import {
@@ -96,11 +103,20 @@ function post(body: unknown): RequestInit {
   return { method: "POST", body: JSON.stringify(body) };
 }
 
+function put(body: string): RequestInit {
+  return {
+    method: "PUT",
+    body,
+    headers: { "Content-Type": "application/octet-stream" },
+  };
+}
+
 /** A WebSocket client that keeps a transcript for every chat it subscribes to, like the web UI does. */
 class TestClient {
   received: ServerMessage[] = [];
   transcripts = new Map<string, TranscriptState>();
   chats = new Map<string, ChatSummary>();
+  projects = new Map<string, ProjectSummary>();
   private listeners = new Set<() => void>();
 
   private constructor(private ws: WebSocket) {
@@ -112,6 +128,11 @@ class TestClient {
       if (msg.type === "chat_updated" || msg.type === "snapshot")
         this.chats.set(msg.chat.id, msg.chat);
       if (msg.type === "chat_deleted") this.chats.delete(msg.chatId);
+      if (msg.type === "projects")
+        for (const project of msg.projects)
+          this.projects.set(project.id, project);
+      if (msg.type === "project_updated")
+        this.projects.set(msg.project.id, msg.project);
       const chatId =
         msg.type === "snapshot"
           ? msg.chat.id
@@ -223,6 +244,28 @@ async function waitForReply(client: TestClient, chatId: string, text: string) {
 
 function patch(body: unknown): RequestInit {
   return { method: "PATCH", body: JSON.stringify(body) };
+}
+
+/** Everything the model is told up front, and told later when it changes. */
+function systemText(context: {
+  messages: { role: string }[];
+  systemPrompt?: string;
+}) {
+  return (
+    (context.systemPrompt ?? "") +
+    JSON.stringify(
+      context.messages.filter((message) => message.role === "system"),
+    )
+  );
+}
+
+async function createProject(
+  api: Awaited<ReturnType<typeof setup>>["api"],
+  name: string,
+  instructions?: string,
+) {
+  const { body } = await api("/api/projects", post({ name, instructions }));
+  return body.project.id as string;
 }
 
 const SLOW_REPLY = "A reply that takes a little while to stream out. ".repeat(
@@ -684,5 +727,253 @@ describe("backend", () => {
       () => reconnected.transcript(chatId).messages.length === 4,
     );
     expect(existsSync(join(workspaces, "default", chatId))).toBe(true);
+  });
+
+  test("creates, edits and archives projects", async () => {
+    const { app, api } = await setup();
+    const client = await TestClient.connect(app);
+
+    const created = await api(
+      "/api/projects",
+      post({ name: "  Thesis  ", instructions: "Cite sources.\n" }),
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.project).toMatchObject({
+      name: "Thesis",
+      instructions: "Cite sources.",
+      archived: false,
+      artefacts: [],
+    });
+    const projectId = created.body.project.id as string;
+    await client.waitFor(() => client.projects.has(projectId));
+
+    const edited = await api(
+      `/api/projects/${projectId}`,
+      patch({ name: "Thesis, take two", instructions: "" }),
+    );
+    expect(edited.body.project).toMatchObject({
+      name: "Thesis, take two",
+      instructions: "",
+    });
+    await client.waitFor(
+      () => client.projects.get(projectId)?.name === "Thesis, take two",
+    );
+    expect((await api("/api/projects")).body.projects).toEqual([
+      expect.objectContaining({ id: projectId, name: "Thesis, take two" }),
+    ]);
+
+    // Archived projects take no new chats or artefacts, but can still be edited and unarchived.
+    await api(`/api/projects/${projectId}`, patch({ archived: true }));
+    await client.waitFor(
+      () => client.projects.get(projectId)?.archived === true,
+    );
+    expect(
+      (
+        await api(
+          "/api/chats",
+          post({ model: MODEL, message: "Hi", projectId }),
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (await api(`/api/projects/${projectId}/artefacts/a.txt`, put("A")))
+        .status,
+    ).toBe(409);
+    expect(
+      (await api(`/api/projects/${projectId}`, patch({ name: "Thesis" })))
+        .status,
+    ).toBe(200);
+    await api(`/api/projects/${projectId}`, patch({ archived: false }));
+    expect(
+      (await api(`/api/projects/${projectId}/artefacts/a.txt`, put("A")))
+        .status,
+    ).toBe(200);
+
+    // Projects come first on a new connection, so chats can be grouped right away.
+    const late = await TestClient.connect(app);
+    await late.waitFor(() => late.received.length >= 2);
+    expect(late.received.map((msg) => msg.type).slice(0, 2)).toEqual([
+      "projects",
+      "chats",
+    ]);
+    expect(late.projects.get(projectId)).toMatchObject({
+      name: "Thesis",
+      artefacts: [expect.objectContaining({ name: "a.txt", size: 1 })],
+    });
+  });
+
+  test("uploads, downloads, replaces and deletes artefacts", async () => {
+    const { app, api } = await setup();
+    const client = await TestClient.connect(app);
+    const projectId = await createProject(api, "Docs");
+    const name = "Notes (draft) ż.md";
+    const path = `/api/projects/${projectId}/artefacts/${encodeURIComponent(name)}`;
+
+    const uploaded = await api(path, put("# Notes\n"));
+    expect(uploaded.status).toBe(200);
+    expect(uploaded.body.artefact).toMatchObject({ name, size: 8 });
+    await client.waitFor(
+      () => client.projects.get(projectId)?.artefacts.length === 1,
+    );
+
+    const download = await fetch(new URL(path, app.url));
+    expect(await download.text()).toBe("# Notes\n");
+    expect(download.headers.get("Content-Disposition")).toBe(
+      `attachment; filename="Notes (draft) _.md"; filename*=UTF-8''Notes%20%28draft%29%20%C5%BC.md`,
+    );
+
+    await api(path, put("# Notes, v2\n"));
+    expect(await (await fetch(new URL(path, app.url))).text()).toBe(
+      "# Notes, v2\n",
+    );
+    expect((await api("/api/projects")).body.projects[0].artefacts).toEqual([
+      expect.objectContaining({ name, size: 12 }),
+    ]);
+
+    expect((await api(path, { method: "DELETE" })).status).toBe(200);
+    await client.waitFor(
+      () => client.projects.get(projectId)?.artefacts.length === 0,
+    );
+    expect((await fetch(new URL(path, app.url))).status).toBe(404);
+    expect((await api(path, { method: "DELETE" })).status).toBe(404);
+
+    // Names that would leave the project's folder.
+    expect(
+      (await api(`/api/projects/${projectId}/artefacts/a%2Fb`, put("x")))
+        .status,
+    ).toBe(400);
+    expect(
+      (await api(`/api/projects/${projectId}/artefacts/%00`, put("x"))).status,
+    ).toBe(400);
+    expect(
+      (await api(`/api/projects/missing/artefacts/a.txt`, put("x"))).status,
+    ).toBe(404);
+  });
+
+  test("chats in a project see its instructions and artefacts, and Pi can save new ones", async () => {
+    const { app, faux, api, dataDir } = await setup();
+    const client = await TestClient.connect(app);
+    const projectId = await createProject(
+      api,
+      "Pirates",
+      "Answer like a pirate.",
+    );
+    await api(
+      `/api/projects/${projectId}/artefacts/map.txt`,
+      put("X marks the spot"),
+    );
+
+    let system = "";
+    faux.setResponses([
+      (context) => {
+        system = systemText(context);
+        return fauxAssistantMessage(
+          fauxToolCall("bash", { command: "cat artefacts/map.txt" }),
+          { stopReason: "toolUse" },
+        );
+      },
+      fauxAssistantMessage(
+        fauxToolCall("write", { path: "artefacts/map.txt", content: "Nope" }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage(
+        fauxToolCall("write", { path: "treasure.md", content: "Gold" }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage(
+        fauxToolCall("save_artefact", { path: "treasure.md" }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage(
+        fauxToolCall("save_artefact", { path: "treasure.md" }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage(
+        fauxToolCall("save_artefact", { path: "artefacts/map.txt" }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage("Arr, saved."),
+    ]);
+    const created = await api(
+      "/api/chats",
+      post({ model: MODEL, message: "Find the treasure", projectId }),
+    );
+    expect(created.body.chat.projectId).toBe(projectId);
+    const chatId = created.body.chat.id as string;
+    client.send({ type: "subscribe", chatId });
+    await waitForReply(client, chatId, "Arr, saved.");
+
+    expect(system).toContain("Answer like a pirate.");
+    expect(system).toContain("map.txt");
+    expect(system).toContain("save_artefact");
+    const link = join(dataDir, "workspaces", "default", chatId, "artefacts");
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+
+    const results = client
+      .transcript(chatId)
+      .messages.filter((message) => message.role === "toolResult");
+    expect(results.map((result) => [result.toolName, result.isError])).toEqual([
+      ["bash", false],
+      // Artefacts are read-only, though not for root.
+      ["write", process.getuid?.() !== 0],
+      ["write", false],
+      ["save_artefact", false],
+      // Artefacts can't be replaced, and are artefacts already.
+      ["save_artefact", true],
+      ["save_artefact", true],
+    ]);
+    expect(results[0].content).toEqual([
+      { type: "text", text: "X marks the spot" },
+    ]);
+    await client.waitFor(() =>
+      client.projects
+        .get(projectId)!
+        .artefacts.some((artefact) => artefact.name === "treasure.md"),
+    );
+    const saved = await fetch(
+      new URL(`/api/projects/${projectId}/artefacts/treasure.md`, app.url),
+    );
+    expect(await saved.text()).toBe("Gold");
+
+    // Changed instructions apply to the next run.
+    await api(
+      `/api/projects/${projectId}`,
+      patch({ instructions: "Answer like a parrot." }),
+    );
+    faux.setResponses([
+      (context) => {
+        system = systemText(context);
+        return fauxAssistantMessage("Squawk.");
+      },
+    ]);
+    await api(`/api/chats/${chatId}/messages`, post({ message: "Again" }));
+    await waitForReply(client, chatId, "Squawk.");
+    expect(system).toContain("Answer like a parrot.");
+
+    // Chats outside of projects know nothing of them.
+    faux.setResponses([
+      (context) => {
+        system = systemText(context);
+        return fauxAssistantMessage("Hello.");
+      },
+    ]);
+    const other = await api(
+      "/api/chats",
+      post({ model: MODEL, message: "Hi" }),
+    );
+    expect(other.body.chat.projectId).toBeNull();
+    await client.waitForStatus(other.body.chat.id, "idle");
+    expect(system).not.toContain("save_artefact");
+
+    // Archiving the project stops its chats.
+    await api(`/api/projects/${projectId}`, patch({ archived: true }));
+    expect(
+      (await api(`/api/chats/${chatId}/messages`, post({ message: "Hi" })))
+        .status,
+    ).toBe(409);
+    const timestamp = userTimestamp(client.transcript(chatId), "Again");
+    expect(
+      (await api(`/api/chats/${chatId}/rewind`, post({ timestamp }))).status,
+    ).toBe(409);
   });
 });

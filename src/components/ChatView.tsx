@@ -1,9 +1,13 @@
 import { useCallback, useState } from "react";
 import { LuArchive, LuArchiveRestore } from "react-icons/lu";
-import type { ChatSummary, ModelInfo } from "../../shared/protocol";
+import type {
+  ChatSummary,
+  ModelInfo,
+  ProjectSummary,
+} from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
 import { cx } from "../lib/cx";
-import { useTranscript } from "../lib/hooks";
+import { routeHref, useTranscript } from "../lib/hooks";
 import styles from "./ChatView.module.css";
 import { Composer } from "./Composer";
 import { ContextMeter } from "./ContextMeter";
@@ -18,6 +22,8 @@ interface ChatViewProps {
   chatId: string;
   /** Undefined while the chat list is loading or if the chat doesn't exist. */
   chat: ChatSummary | undefined;
+  /** The chat's project, if it's in one. */
+  project: ProjectSummary | undefined;
   chatsLoaded: boolean;
   models: ModelInfo[];
   onMenu: () => void;
@@ -27,6 +33,7 @@ export function ChatView({
   client,
   chatId,
   chat,
+  project,
   chatsLoaded,
   models,
   onMenu,
@@ -35,6 +42,7 @@ export function ChatView({
   const [actionError, setActionError] = useState<string | null>(null);
   const running = chat?.status === "running";
   const archived = chat?.archived ?? false;
+  const projectArchived = project?.archived ?? false;
 
   const rewind = useCallback(
     (timestamp: number, message?: string) =>
@@ -48,6 +56,8 @@ export function ChatView({
   }
   const setArchived = (value: boolean) =>
     act(() => client.updateChat(chatId, { archived: value }));
+  const unarchiveProject = () =>
+    project && act(() => client.updateProject(project.id, { archived: false }));
 
   if (chatsLoaded && !chat) {
     return (
@@ -62,7 +72,17 @@ export function ChatView({
 
   return (
     <>
-      <Header title={chat?.title ?? ""} running={running} onMenu={onMenu}>
+      <Header
+        title={chat?.title ?? ""}
+        parent={
+          project && {
+            label: project.name,
+            href: routeHref({ name: "project", projectId: project.id }),
+          }
+        }
+        running={running}
+        onMenu={onMenu}
+      >
         {chat && (
           <button
             type="button"
@@ -83,7 +103,7 @@ export function ChatView({
         <Transcript
           transcript={transcript}
           running={running}
-          onRewind={running || archived ? undefined : rewind}
+          onRewind={running || archived || projectArchived ? undefined : rewind}
         />
       ) : (
         <div className={styles.empty}>
@@ -94,7 +114,19 @@ export function ChatView({
         <div className={ui.errorBanner}>{transcript.error}</div>
       )}
       {actionError && <div className={ui.errorBanner}>{actionError}</div>}
-      {archived ? (
+      {projectArchived ? (
+        <div className={styles.archivedNotice}>
+          This chat's project is archived.{" "}
+          <button
+            type="button"
+            className={cx(ui.linkButton, styles.unarchiveButton)}
+            onClick={unarchiveProject}
+          >
+            Unarchive the project
+          </button>{" "}
+          to continue.
+        </div>
+      ) : archived ? (
         <div className={styles.archivedNotice}>
           This chat is archived.{" "}
           <button

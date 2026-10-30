@@ -7,6 +7,7 @@ export const DEFAULT_USER_ID = "default";
 export interface ChatRow {
   id: string;
   userId: string;
+  projectId: string | null;
   title: string;
   model: ModelRef;
   /** Pi JSONL transcript, relative to the data dir. Null until the chat's Pi session is first opened. */
@@ -20,6 +21,7 @@ export interface ChatRow {
 interface RawChatRow {
   id: string;
   user_id: string;
+  project_id: string | null;
   title: string;
   model_provider: string;
   model_id: string;
@@ -28,6 +30,26 @@ interface RawChatRow {
   context_tokens: number | null;
   /** Null when the context usage is unknown altogether. */
   context_window: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ProjectRow {
+  id: string;
+  userId: string;
+  name: string;
+  instructions: string;
+  archivedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface RawProjectRow {
+  id: string;
+  user_id: string;
+  name: string;
+  instructions: string;
+  archived_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -52,6 +74,17 @@ const MIGRATIONS = [
   `ALTER TABLE chats ADD COLUMN archived_at INTEGER;
   ALTER TABLE chats ADD COLUMN context_tokens INTEGER;
   ALTER TABLE chats ADD COLUMN context_window INTEGER;`,
+  `CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    instructions TEXT NOT NULL,
+    archived_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX projects_user ON projects (user_id);
+  ALTER TABLE chats ADD COLUMN project_id TEXT REFERENCES projects(id);`,
 ];
 
 export class Db {
@@ -104,13 +137,14 @@ export class Db {
   insertChat(chat: ChatRow) {
     this.db
       .query(
-        `INSERT INTO chats (id, user_id, title, model_provider, model_id, session_file, archived_at,
-           context_tokens, context_window, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO chats (id, user_id, project_id, title, model_provider, model_id, session_file,
+           archived_at, context_tokens, context_window, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         chat.id,
         chat.userId,
+        chat.projectId,
         chat.title,
         chat.model.provider,
         chat.model.id,
@@ -163,6 +197,59 @@ export class Db {
     this.db.query("DELETE FROM chats WHERE id = ?").run(chatId);
   }
 
+  listProjects(userId: string): ProjectRow[] {
+    const rows = this.db
+      .query("SELECT * FROM projects WHERE user_id = ?")
+      .all(userId) as RawProjectRow[];
+    return rows.map(toProjectRow);
+  }
+
+  getProject(userId: string, projectId: string): ProjectRow | null {
+    const row = this.db
+      .query("SELECT * FROM projects WHERE id = ? AND user_id = ?")
+      .get(projectId, userId) as RawProjectRow | null;
+    return row ? toProjectRow(row) : null;
+  }
+
+  getProjectById(projectId: string): ProjectRow | null {
+    const row = this.db
+      .query("SELECT * FROM projects WHERE id = ?")
+      .get(projectId) as RawProjectRow | null;
+    return row ? toProjectRow(row) : null;
+  }
+
+  insertProject(project: ProjectRow) {
+    this.db
+      .query(
+        `INSERT INTO projects (id, user_id, name, instructions, archived_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        project.id,
+        project.userId,
+        project.name,
+        project.instructions,
+        project.archivedAt,
+        project.createdAt,
+        project.updatedAt,
+      );
+  }
+
+  /** Writes the project's mutable fields. */
+  updateProject(project: ProjectRow) {
+    this.db
+      .query(
+        "UPDATE projects SET name = ?, instructions = ?, archived_at = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(
+        project.name,
+        project.instructions,
+        project.archivedAt,
+        project.updatedAt,
+        project.id,
+      );
+  }
+
   close() {
     this.db.close();
   }
@@ -172,6 +259,7 @@ function toChatRow(row: RawChatRow): ChatRow {
   return {
     id: row.id,
     userId: row.user_id,
+    projectId: row.project_id,
     title: row.title,
     model: { provider: row.model_provider, id: row.model_id },
     sessionFile: row.session_file,
@@ -180,6 +268,18 @@ function toChatRow(row: RawChatRow): ChatRow {
       row.context_window === null
         ? null
         : { tokens: row.context_tokens, contextWindow: row.context_window },
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toProjectRow(row: RawProjectRow): ProjectRow {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    instructions: row.instructions,
+    archivedAt: row.archived_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

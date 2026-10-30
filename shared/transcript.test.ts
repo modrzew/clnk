@@ -9,6 +9,7 @@ import {
 const chat: ChatSummary = {
   id: "c1",
   title: "Hi",
+  projectId: null,
   model: { provider: "p", id: "m" },
   status: "running",
   archived: false,

@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { Type } from "@earendil-works/pi-ai";
 import {
   type AgentSession,
   type AgentSessionEvent,
@@ -7,6 +8,7 @@ import {
   createMcpExtension,
   createToolSearchExtension,
   DefaultResourceLoader,
+  defineTool,
   getAgentDir,
   type InlineExtension,
   ModelRuntime,
@@ -14,12 +16,20 @@ import {
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatMessage, ModelRef, ModelsResponse } from "../shared/protocol";
+import type {
+  ArtefactInfo,
+  ChatMessage,
+  ModelRef,
+  ModelsResponse,
+} from "../shared/protocol";
 
 export type AgentMessage = Extract<
   AgentSessionEvent,
   { type: "message_end" }
 >["message"];
+
+/** Where a project chat's folder links to the project's artefacts. */
+export const ARTEFACTS_LINK = "artefacts";
 
 /** Pi configuration shared by every chat. Only the chat folder and transcript differ per chat. */
 export interface PiHost {
@@ -75,6 +85,16 @@ export interface ChatSessionOptions {
   /** Existing transcript to continue. A new one is started when null or missing. */
   sessionFile: string | null;
   model: ModelRef;
+  /** For chats in a project. */
+  project?: ProjectHooks;
+}
+
+/** What a chat's session needs from its project. */
+export interface ProjectHooks {
+  /** The project's part of the system prompt. Read before every run, so changes apply to the next one. */
+  prompt(): string | null;
+  /** Saves a file as a project artefact. `path` is as Pi gave it. Throws errors worded for Pi. */
+  saveArtefact(path: string, name: string | undefined): Promise<ArtefactInfo>;
 }
 
 export async function openChatSession(
@@ -99,7 +119,10 @@ export async function openChatSession(
     agentDir: host.agentDir,
     settingsManager,
     noExtensions: !host.extensions,
-    extensionFactories: host.extensions ? builtinExtensions() : [],
+    extensionFactories: [
+      ...(host.extensions ? builtinExtensions() : []),
+      ...(options.project ? [projectExtension(options.project)] : []),
+    ],
     appendSystemPrompt: [chatInstructions(options.cwd)],
   });
   await resourceLoader.reload();
@@ -154,6 +177,50 @@ function builtinExtensions(): InlineExtension[] {
       builtin: true,
     },
   ];
+}
+
+/** Adds the project to the system prompt and lets Pi save artefacts. Loaded even when other extensions aren't. */
+function projectExtension(project: ProjectHooks): InlineExtension {
+  const saveArtefact = defineTool({
+    name: "save_artefact",
+    label: "Save artefact",
+    description:
+      "Saves a file from your working directory as an artefact of the project, so that every chat in the project can use it. Artefacts can't be changed or replaced once saved.",
+    promptSnippet: "Save a file as an artefact of the project",
+    parameters: Type.Object({
+      path: Type.String({
+        description: "The file to save, relative to your working directory",
+      }),
+      name: Type.Optional(
+        Type.String({
+          description:
+            "File name of the artefact, if it should differ from the file's own name",
+        }),
+      ),
+    }),
+    async execute(_toolCallId, { path, name }) {
+      const artefact = await project.saveArtefact(path, name);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Saved as the artefact ${artefact.name}. Every chat in the project has it at ${ARTEFACTS_LINK}/${artefact.name}.`,
+          },
+        ],
+        details: { artefact },
+      };
+    },
+  });
+  return {
+    name: "clnk-project",
+    factory: (pi) => {
+      pi.on("before_agent_start", (event) => {
+        const prompt = project.prompt();
+        if (prompt) event.systemPromptOptions.sections.clnk_project = prompt;
+      });
+      pi.registerTool(saveArtefact);
+    },
+  };
 }
 
 function chatInstructions(cwd: string): string {
