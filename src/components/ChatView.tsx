@@ -2,12 +2,16 @@ import { useCallback, useState } from "react";
 import { LuArchive, LuArchiveRestore } from "react-icons/lu";
 import type { ChatSummary, ModelInfo } from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
+import { cx } from "../lib/cx";
 import { useTranscript } from "../lib/hooks";
+import styles from "./ChatView.module.css";
 import { Composer } from "./Composer";
 import { ContextMeter } from "./ContextMeter";
 import { Header } from "./Header";
-import { ModelSelect } from "./ModelSelect";
+import { ModelLabel, ModelSelect } from "./ModelSelect";
+import { Spinner } from "./Spinner";
 import { Transcript } from "./Transcript";
+import ui from "./ui.module.css";
 
 interface ChatViewProps {
   client: BackendClient;
@@ -49,7 +53,9 @@ export function ChatView({
     return (
       <>
         <Header title="Chat not found" onMenu={onMenu} />
-        <div className="empty">This chat doesn't exist on this backend.</div>
+        <div className={styles.empty}>
+          This chat doesn't exist on this backend.
+        </div>
       </>
     );
   }
@@ -60,7 +66,7 @@ export function ChatView({
         {chat && (
           <button
             type="button"
-            className="icon-button"
+            className={ui.iconButton}
             aria-label={archived ? "Unarchive chat" : "Archive chat"}
             title={archived ? "Unarchive chat" : "Archive chat"}
             onClick={() => setArchived(!archived)}
@@ -80,18 +86,20 @@ export function ChatView({
           onRewind={running || archived ? undefined : rewind}
         />
       ) : (
-        <div className="empty">
-          <span className="spinner" />
+        <div className={styles.empty}>
+          <Spinner />
         </div>
       )}
-      {transcript.error && <div className="run-error">{transcript.error}</div>}
-      {actionError && <div className="run-error">{actionError}</div>}
+      {transcript.error && (
+        <div className={ui.errorBanner}>{transcript.error}</div>
+      )}
+      {actionError && <div className={ui.errorBanner}>{actionError}</div>}
       {archived ? (
-        <div className="archived-notice">
+        <div className={styles.archivedNotice}>
           This chat is archived.{" "}
           <button
             type="button"
-            className="link-button"
+            className={cx(ui.linkButton, styles.unarchiveButton)}
             onClick={() => setArchived(false)}
           >
             Unarchive it
@@ -116,7 +124,7 @@ export function ChatView({
                 }
               />
             ) : (
-              <span className="model-select">{chat.model.id}</span>
+              <ModelLabel model={chat.model} />
             ))}
           <ContextMeter context={chat?.context ?? null} />
         </Composer>

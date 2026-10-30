@@ -1,0 +1,95 @@
+/* Controls and messages used across components. Components restyle them with classes of their own. */
+
+@layer ui {
+  .iconButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    font-size: 18px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    color: var(--text-muted);
+  }
+
+  .iconButton:hover {
+    background: var(--bg-hover);
+  }
+
+  .linkButton {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 13px;
+    color: var(--accent);
+  }
+
+  .linkButton:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .button {
+    padding: 6px 14px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .button.secondary {
+    background: none;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  /* A text toggle with a disclosure triangle. */
+  .disclosure {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .disclosure::before {
+    content: "▸ ";
+  }
+
+  .disclosure[aria-expanded="true"]::before {
+    content: "▾ ";
+  }
+
+  .error,
+  .errorBanner {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--danger-bg);
+    color: var(--danger);
+    font-size: 14px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* An error across the main column, outside the transcript. */
+  .errorBanner {
+    max-width: 740px;
+    width: calc(100% - 40px);
+    margin: 0 auto 8px;
+  }
+
+  /* An error with a text field or button. */
+  .errorText {
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: var(--danger);
+  }
+}

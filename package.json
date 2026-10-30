@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "server": "bun server/index.ts",
     "server:dev": "bun --watch server/index.ts",
-    "typecheck": "tsc && tsc -p server",
+    "typecheck": "bun run css-types --check && tsc && tsc -p server && tsc -p tsconfig.node.json --noEmit",
+    "css-types": "bun scripts/css-types.ts",
     "lint": "eslint --max-warnings 0 .",
     "test": "bun test",
     "tauri": "tauri",
@@ -37,6 +38,7 @@
     "eslint": "^10.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
+    "lightningcss": "^1.33.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1",
     "vite": "^8.0.16"

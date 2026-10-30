@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { checkBackend, normalizeBackendUrl } from "../lib/client";
+import styles from "./Setup.module.css";
 
 interface SetupProps {
   initialUrl: string;
@@ -28,8 +29,8 @@ export function Setup({ initialUrl, onConnect, onCancel }: SetupProps) {
   }
 
   return (
-    <div className="setup">
-      <form className="setup-card" onSubmit={(event) => void submit(event)}>
+    <div className={styles.setup}>
+      <form className={styles.card} onSubmit={(event) => void submit(event)}>
         <h1>clnk</h1>
         <p>Enter the address of the backend that runs Pi.</p>
         <input
@@ -43,10 +44,14 @@ export function Setup({ initialUrl, onConnect, onCancel }: SetupProps) {
           autoFocus
           onChange={(event) => setUrl(event.target.value)}
         />
-        {error && <div className="setup-error">{error}</div>}
-        <div className="setup-actions">
+        {error && <div className={styles.error}>{error}</div>}
+        <div className={styles.actions}>
           {onCancel && (
-            <button type="button" className="secondary" onClick={onCancel}>
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={onCancel}
+            >
               Cancel
             </button>
           )}

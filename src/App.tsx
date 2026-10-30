@@ -11,7 +11,7 @@ import {
   useModels,
   useRoute,
 } from "./lib/hooks";
-import "./App.css";
+import styles from "./App.module.css";
 
 const BACKEND_URL_KEY = "clnk.backendUrl";
 
@@ -73,7 +73,7 @@ function Shell({
   const openSidebar = () => setSidebarOpen(true);
 
   return (
-    <div className="app">
+    <div className={styles.app}>
       <Sidebar
         chats={chats}
         route={route}
@@ -97,12 +97,14 @@ function Shell({
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
       />
-      <main className="main">
+      <main className={styles.main}>
         {connection === "offline" && (
-          <div className="offline-banner">Connection lost. Reconnecting…</div>
+          <div className={styles.offlineBanner}>
+            Connection lost. Reconnecting…
+          </div>
         )}
         {error && (
-          <div className="offline-banner" onClick={() => setError(null)}>
+          <div className={styles.offlineBanner} onClick={() => setError(null)}>
             {error}
           </div>
         )}

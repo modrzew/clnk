@@ -1,0 +1,92 @@
+/*
+ * Cascade layers, lowest first: these globals, then the shared controls in components/ui.module.css.
+ * Component CSS modules are unlayered, so their classes override both whatever the import order.
+ */
+@layer base, ui;
+
+@layer base {
+  :root {
+    --bg: #fbfbfa;
+    --bg-sidebar: #f1f1ef;
+    --bg-raised: #ffffff;
+    --bg-user: #ecebe7;
+    --bg-hover: #e6e5e1;
+    --border: #dddcd7;
+    --text: #1d1d1b;
+    --text-muted: #6d6c67;
+    --accent: #2f6f5e;
+    --accent-text: #ffffff;
+    --danger: #b3261e;
+    --danger-bg: #fbeceb;
+    --ok: #2f8a4f;
+    --warn: #9a6200;
+    --code-bg: #efeeea;
+    --diff-add: #1f6e3b;
+    --diff-add-bg: #e3f3e7;
+    --diff-del: #9e2a22;
+    --diff-del-bg: #fbe9e7;
+    --radius: 12px;
+    --sidebar-width: 272px;
+
+    color-scheme: light dark;
+    font-family:
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1c1b;
+      --bg-sidebar: #151615;
+      --bg-raised: #242524;
+      --bg-user: #2c2e2c;
+      --bg-hover: #2a2c2a;
+      --border: #353735;
+      --text: #e6e6e3;
+      --text-muted: #9a9a95;
+      --accent: #6fb8a2;
+      --accent-text: #0f1a16;
+      --danger: #f08b84;
+      --danger-bg: #3a2322;
+      --ok: #6ccf8e;
+      --warn: #e0b057;
+      --code-bg: #262826;
+      --diff-add: #8fd8a6;
+      --diff-add-bg: #1e3326;
+      --diff-del: #f2a39c;
+      --diff-del-bg: #3a2322;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
+}

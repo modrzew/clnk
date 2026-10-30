@@ -5,7 +5,9 @@ import type {
   ToolCall,
   ToolResultMessage,
 } from "../../shared/protocol";
+import { cx } from "../lib/cx";
 import { type OutputKind, useExpandable } from "../lib/prefs";
+import styles from "./ToolCall.module.css";
 
 interface ToolCallViewProps {
   call: ToolCall;
@@ -22,6 +24,13 @@ const STATUS_LABEL: Record<Status, string> = {
   error: "Failed",
   running: "Running",
   unknown: "No result",
+};
+
+const STATUS_CLASS: Record<Status, string | undefined> = {
+  ok: styles.ok,
+  error: styles.error,
+  running: styles.running,
+  unknown: undefined,
 };
 
 export function ToolCallView({
@@ -43,17 +52,17 @@ export function ToolCallView({
   );
   const summary = summarizeArguments(call.arguments);
   return (
-    <div className={`tool tool-${status}${open ? " open" : ""}`}>
+    <div className={cx(styles.tool, STATUS_CLASS[status])}>
       <button
         type="button"
-        className="tool-call"
+        className={styles.call}
         aria-expanded={open}
         title={summary ? `${call.name}: ${summary}` : call.name}
         onClick={toggle}
       >
-        <span className="tool-status" aria-label={STATUS_LABEL[status]} />
-        <span className="tool-name">{call.name}</span>
-        {summary && <span className="tool-args">{summary}</span>}
+        <span className={styles.status} aria-label={STATUS_LABEL[status]} />
+        <span className={styles.name}>{call.name}</span>
+        {summary && <span className={styles.args}>{summary}</span>}
       </button>
       {open && (
         <ToolDetails
@@ -106,7 +115,7 @@ function ToolDetails({
     case "powershell":
       body = (
         <>
-          <pre className="tool-input">{`$ ${stringArg(args.command)}`}</pre>
+          <pre className={styles.input}>{`$ ${stringArg(args.command)}`}</pre>
           {text !== undefined && (
             <Output text={text || "(no output)"} follow={live} />
           )}
@@ -137,19 +146,19 @@ function ToolDetails({
       const input = JSON.stringify(args, null, 2);
       body = (
         <>
-          {input !== "{}" && <pre className="tool-input">{input}</pre>}
+          {input !== "{}" && <pre className={styles.input}>{input}</pre>}
           {text && <Output text={text} follow={live} />}
         </>
       );
     }
   }
   return (
-    <div className="tool-body">
+    <div className={styles.body}>
       {body}
       {images?.map((image, index) => (
         <img
           key={index}
-          className="tool-image"
+          className={styles.image}
           alt=""
           src={`data:${image.mimeType};base64,${image.data}`}
         />
@@ -166,7 +175,7 @@ function Output({ text, follow = false }: { text: string; follow?: boolean }) {
     if (el && follow) el.scrollTop = el.scrollHeight;
   }, [text, follow]);
   return (
-    <pre ref={ref} className="tool-output">
+    <pre ref={ref} className={styles.output}>
       {text}
     </pre>
   );
@@ -175,15 +184,15 @@ function Output({ text, follow = false }: { text: string; follow?: boolean }) {
 /** Pi's display diff: one line per row, prefixed with +, - or a space, then the line number. */
 function Diff({ text }: { text: string }) {
   return (
-    <div className="tool-output diff">
+    <div className={cx(styles.output, styles.diff)}>
       {text.split("\n").map((line, index) => (
         <div
           key={index}
           className={
             line.startsWith("+")
-              ? "diff-add"
+              ? styles.diffAdd
               : line.startsWith("-")
-                ? "diff-del"
+                ? styles.diffDel
                 : undefined
           }
         >

@@ -17,9 +17,13 @@ import type {
   UserMessage,
 } from "../../shared/protocol";
 import type { TranscriptState } from "../../shared/transcript";
+import { cx } from "../lib/cx";
 import { useExpandable } from "../lib/prefs";
 import { Markdown } from "./Markdown";
+import { Spinner } from "./Spinner";
 import { ToolCallView } from "./ToolCall";
+import styles from "./Transcript.module.css";
+import ui from "./ui.module.css";
 
 /** Edits (with `message`) or retries the user message with the given timestamp. */
 export type Rewind = (timestamp: number, message?: string) => Promise<void>;
@@ -61,8 +65,8 @@ export function Transcript({ transcript, running, onRewind }: TranscriptProps) {
   const lastUser = lastUserMessage(messages);
   const waiting = running && !streaming;
   return (
-    <div className="transcript" ref={scrollRef} onScroll={onScroll}>
-      <div className="transcript-inner">
+    <div className={styles.transcript} ref={scrollRef} onScroll={onScroll}>
+      <div className={styles.inner}>
         {messages.map((message, index) => (
           <MessageView
             key={`${index}:${message.timestamp}`}
@@ -86,14 +90,16 @@ export function Transcript({ transcript, running, onRewind }: TranscriptProps) {
           />
         )}
         {queued.map((text, index) => (
-          <div key={index} className="msg msg-user queued">
-            <div className="bubble">{text}</div>
-            <div className="msg-note">Pi reads this after its current step</div>
+          <div key={index} className={cx(styles.msgUser, styles.queued)}>
+            <div className={styles.bubble}>{text}</div>
+            <div className={styles.msgNote}>
+              Pi reads this after its current step
+            </div>
           </div>
         ))}
         {(waiting || activity) && (
-          <div className="working" aria-live="polite">
-            <span className="spinner" /> {activity ?? "Pi is working…"}
+          <div className={styles.working} aria-live="polite">
+            <Spinner /> {activity ?? "Pi is working…"}
           </div>
         )}
         {onRewind && lastUser && (
@@ -133,7 +139,7 @@ const MessageView = memo(function MessageView({
       );
     case "custom":
       return (
-        <div className="msg msg-custom">
+        <div className={styles.msgCustom}>
           <Markdown text={contentText(message.content)} />
         </div>
       );
@@ -169,13 +175,13 @@ function UserMessageView({
       />
     );
   return (
-    <div className="msg msg-user">
-      <div className="bubble">{text}</div>
+    <div className={styles.msgUser}>
+      <div className={styles.bubble}>{text}</div>
       {onRewind && (
-        <div className="msg-actions">
+        <div className={styles.msgActions}>
           <button
             type="button"
-            className="link-button"
+            className={ui.linkButton}
             onClick={() => setEditing(true)}
           >
             Edit
@@ -233,8 +239,8 @@ function EditMessage({
   }
 
   return (
-    <div className="msg msg-user">
-      <div className="edit-box">
+    <div className={styles.msgUser}>
+      <div className={styles.editBox}>
         <textarea
           ref={inputRef}
           value={text}
@@ -243,19 +249,23 @@ function EditMessage({
           onChange={(event) => setText(event.target.value)}
           onKeyDown={onKeyDown}
         />
-        {error && <div className="composer-error">{error}</div>}
-        <div className="edit-actions">
-          <span className="edit-hint">
+        {error && <div className={ui.errorText}>{error}</div>}
+        <div className={styles.editActions}>
+          <span className={styles.editHint}>
             {onSave
               ? "Pi answers again from here; later messages are replaced."
               : "Wait for Pi to finish to send this."}
           </span>
-          <button type="button" className="button secondary" onClick={onCancel}>
+          <button
+            type="button"
+            className={cx(ui.button, ui.secondary)}
+            onClick={onCancel}
+          >
             Cancel
           </button>
           <button
             type="button"
-            className="button"
+            className={ui.button}
             disabled={!canSave}
             onClick={() => void save()}
           >
@@ -271,10 +281,10 @@ function RetryButton({ onRetry }: { onRetry: () => Promise<void> }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <div className="retry">
+    <div className={styles.retry}>
       <button
         type="button"
-        className="link-button"
+        className={ui.linkButton}
         disabled={pending}
         title="Send the last message again"
         onClick={() => {
@@ -287,7 +297,7 @@ function RetryButton({ onRetry }: { onRetry: () => Promise<void> }) {
       >
         ↻ Retry
       </button>
-      {error && <span className="composer-error">{error}</span>}
+      {error && <span className={ui.errorText}>{error}</span>}
     </div>
   );
 }
@@ -309,7 +319,7 @@ function AssistantView({
 }: AssistantViewProps) {
   const lastIndex = message.content.length - 1;
   return (
-    <div className="msg msg-assistant">
+    <div className={styles.msgAssistant}>
       {message.content.map((block, index) => {
         switch (block.type) {
           case "text":
@@ -339,15 +349,15 @@ function AssistantView({
         }
       })}
       {message.stopReason === "error" && (
-        <div className="msg-error">
+        <div className={ui.error}>
           {message.errorMessage || "The model returned an error."}
         </div>
       )}
       {message.stopReason === "aborted" && (
-        <div className="msg-note">Stopped.</div>
+        <div className={styles.msgNote}>Stopped.</div>
       )}
       {message.stopReason === "length" && (
-        <div className="msg-note">Stopped at the output token limit.</div>
+        <div className={styles.msgNote}>Stopped at the output token limit.</div>
       )}
     </div>
   );
@@ -364,10 +374,10 @@ function Thinking({
   const text = block.thinking.trim();
   if (!text && !active) return null;
   return (
-    <div className={`thinking${open ? " open" : ""}`}>
+    <div>
       <button
         type="button"
-        className="disclosure"
+        className={ui.disclosure}
         aria-expanded={open}
         onClick={toggle}
       >
@@ -377,7 +387,7 @@ function Thinking({
             ? "Thinking (redacted)"
             : "Thinking"}
       </button>
-      {open && text && <div className="thinking-body">{text}</div>}
+      {open && text && <div className={styles.thinkingBody}>{text}</div>}
     </div>
   );
 }
@@ -385,17 +395,17 @@ function Thinking({
 function CompactionView({ marker }: { marker: CompactionMarker }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className={`compaction${open ? " open" : ""}`}>
+    <div>
       <button
         type="button"
-        className="msg-divider"
+        className={styles.msgDivider}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         Context compacted
       </button>
       {open && (
-        <div className="compaction-summary">
+        <div className={styles.compactionSummary}>
           <Markdown text={marker.summary} />
         </div>
       )}

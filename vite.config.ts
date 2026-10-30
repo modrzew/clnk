@@ -1,12 +1,36 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
-// @ts-expect-error type error without @types/node package
 import process from "node:process";
+import { isCssModule, updateCssTypes } from "./scripts/css-types.ts";
+
 const host = process.env.TAURI_DEV_HOST;
+
+/** Keeps the CSS module types current as the CSS changes (see scripts/css-types.ts). */
+function cssTypes(): Plugin {
+  return {
+    name: "clnk:css-types",
+    apply: "serve",
+    configureServer(server) {
+      const update = (path: string) => {
+        if (!isCssModule(path)) return;
+        try {
+          if (updateCssTypes(path))
+            server.config.logger.info(`CSS module types updated: ${path}`);
+        } catch (err) {
+          server.config.logger.warn(`CSS module types: ${String(err)}`);
+        }
+      };
+      server.watcher
+        .on("add", update)
+        .on("change", update)
+        .on("unlink", update);
+    },
+  };
+}
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-  plugins: [react()],
+  plugins: [react(), cssTypes()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

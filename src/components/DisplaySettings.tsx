@@ -6,6 +6,8 @@ import {
   setExpandMode,
   useDisplayPrefs,
 } from "../lib/prefs";
+import styles from "./DisplaySettings.module.css";
+import ui from "./ui.module.css";
 
 export function DisplaySettings({
   open,
@@ -27,24 +29,24 @@ export function DisplaySettings({
   return (
     <dialog
       ref={ref}
-      className="dialog"
+      className={styles.dialog}
       aria-labelledby="display-settings-title"
       onClose={onClose}
       // A click on the dialog itself, not its content, is on the backdrop.
       onClick={(event) => event.target === ref.current && onClose()}
     >
-      <div className="dialog-content">
+      <div className={styles.content}>
         <h2 id="display-settings-title">Display</h2>
-        <p className="dialog-text">
+        <p className={styles.text}>
           What's expanded in chats. Click any of it to expand or collapse it
           anyway.
         </p>
-        <div className="settings">
+        <div className={styles.settings}>
           {OUTPUT_KINDS.map(({ kind, label, hint }) => (
-            <label key={kind} className="setting">
-              <span className="setting-text">
-                <span className="setting-label">{label}</span>
-                <span className="setting-hint">{hint}</span>
+            <label key={kind} className={styles.setting}>
+              <span className={styles.settingText}>
+                <span className={styles.settingLabel}>{label}</span>
+                <span className={styles.settingHint}>{hint}</span>
               </span>
               <select
                 value={prefs[kind]}
@@ -61,9 +63,9 @@ export function DisplaySettings({
             </label>
           ))}
         </div>
-        <div className="dialog-actions">
-          <span className="setting-hint">Saved on this device.</span>
-          <button type="button" className="button" onClick={onClose}>
+        <div className={styles.actions}>
+          <span className={styles.settingHint}>Saved on this device.</span>
+          <button type="button" className={ui.button} onClick={onClose}>
             Done
           </button>
         </div>

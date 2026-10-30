@@ -1,0 +1,10 @@
+.meter {
+  margin-left: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.high {
+  color: var(--warn);
+  font-weight: 600;
+}

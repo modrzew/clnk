@@ -1,5 +1,6 @@
 import type { ModelInfo, ModelRef } from "../../shared/protocol";
 import { groupByProvider, modelKey } from "../lib/models";
+import styles from "./ModelSelect.module.css";
 
 interface ModelSelectProps {
   models: ModelInfo[];
@@ -12,7 +13,7 @@ export function ModelSelect({ models, value, onChange }: ModelSelectProps) {
   const known = models.some((model) => modelKey(model) === selected);
   return (
     <select
-      className="model-select"
+      className={styles.select}
       aria-label="Model"
       title={value ? modelKey(value) : undefined}
       value={selected}
@@ -35,4 +36,9 @@ export function ModelSelect({ models, value, onChange }: ModelSelectProps) {
       ))}
     </select>
   );
+}
+
+/** The model in the picker's place, for when there's nothing to pick from. */
+export function ModelLabel({ model }: { model: ModelRef }) {
+  return <span className={styles.select}>{model.id}</span>;
 }

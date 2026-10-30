@@ -6,6 +6,8 @@ import { modelKey } from "../lib/models";
 import { Composer } from "./Composer";
 import { Header } from "./Header";
 import { ModelSelect } from "./ModelSelect";
+import styles from "./NewChat.module.css";
+import ui from "./ui.module.css";
 
 const LAST_MODEL_KEY = "clnk.lastModel";
 
@@ -32,13 +34,15 @@ export function NewChat({
   return (
     <>
       <Header title="New chat" onMenu={onMenu} />
-      <div className="new-chat">
+      <div className={styles.newChat}>
         <h2>What should Pi do?</h2>
         {models.error && !models.models && (
-          <div className="run-error">Couldn't load models: {models.error}</div>
+          <div className={ui.errorBanner}>
+            Couldn't load models: {models.error}
+          </div>
         )}
         {models.models && available.length === 0 && (
-          <div className="run-error">
+          <div className={ui.errorBanner}>
             No models are available. Configure a provider for Pi on the backend
             machine.
           </div>

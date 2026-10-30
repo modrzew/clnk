@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 import { LuSquare } from "react-icons/lu";
+import styles from "./Composer.module.css";
+import ui from "./ui.module.css";
 
 interface ComposerProps {
   onSend: (text: string) => Promise<void>;
@@ -99,9 +101,9 @@ export function Composer({
   }
 
   return (
-    <form className="composer" onSubmit={(event) => void submit(event)}>
-      {error && <div className="composer-error">{error}</div>}
-      <div className="composer-box">
+    <form className={styles.composer} onSubmit={(event) => void submit(event)}>
+      {error && <div className={ui.errorText}>{error}</div>}
+      <div className={styles.box}>
         <textarea
           ref={inputRef}
           value={text}
@@ -119,7 +121,7 @@ export function Composer({
         {canStop && (
           <button
             type="button"
-            className="stop"
+            className={styles.stop}
             disabled={stopping}
             aria-label="Stop"
             title="Stop (Esc)"
@@ -130,14 +132,14 @@ export function Composer({
         )}
         <button
           type="submit"
-          className="send"
+          className={styles.send}
           disabled={!canSend}
           aria-label={running ? "Steer" : "Send"}
         >
           ↑
         </button>
       </div>
-      {children && <div className="composer-bar">{children}</div>}
+      {children && <div className={styles.bar}>{children}</div>}
     </form>
   );
 }

@@ -34,6 +34,27 @@ export default defineConfig([
   {
     files: ["src/**/*.{ts,tsx}"],
     extends: [reactHooks.configs.flat.recommended, reactRefresh.configs.vite],
+    rules: {
+      // Classes come from CSS modules, whose generated types reject classes that don't exist.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: [
+            // className="a", className={"a"}, className={`a ${b}`}
+            "JSXAttribute[name.name='className'] > Literal",
+            "JSXAttribute[name.name='className'] > JSXExpressionContainer > Literal",
+            "JSXAttribute[name.name='className'] TemplateElement[value.raw=/\\S/]",
+            // className={x ? "a" : "b"}, className={x && "a"}, cx("a")
+            "JSXAttribute[name.name='className'] ConditionalExpression > Literal.consequent",
+            "JSXAttribute[name.name='className'] ConditionalExpression > Literal.alternate",
+            "JSXAttribute[name.name='className'] LogicalExpression > Literal.right",
+            "CallExpression[callee.name='cx'] > Literal",
+          ].join(", "),
+          message:
+            "Use classes from a CSS module (styles.name), not strings: misspelled ones aren't caught.",
+        },
+      ],
+    },
   },
   {
     // Tests poke at loosely typed JSON response bodies.

@@ -6,7 +6,11 @@ import {
 } from "react-icons/lu";
 import type { ChatSummary } from "../../shared/protocol";
 import type { ConnectionStatus } from "../lib/client";
+import { cx } from "../lib/cx";
 import { navigate, type Route } from "../lib/hooks";
+import styles from "./Sidebar.module.css";
+import { Spinner } from "./Spinner";
+import ui from "./ui.module.css";
 
 interface SidebarProps {
   chats: ChatSummary[] | null;
@@ -24,6 +28,12 @@ const CONNECTION_LABEL: Record<ConnectionStatus, string> = {
   connecting: "Connecting…",
   open: "Connected",
   offline: "Reconnecting…",
+};
+
+const CONNECTION_CLASS: Record<ConnectionStatus, string | undefined> = {
+  connecting: undefined,
+  open: styles.connectionOpen,
+  offline: styles.connectionOffline,
 };
 
 export function Sidebar({
@@ -46,21 +56,19 @@ export function Sidebar({
     <li key={chat.id}>
       <a
         href={`#/chat/${encodeURIComponent(chat.id)}`}
-        className={chat.id === activeId ? "active" : undefined}
+        className={chat.id === activeId ? styles.active : undefined}
         onClick={(event) => {
           event.preventDefault();
           navigate({ name: "chat", chatId: chat.id });
           onClose();
         }}
       >
-        <span className="chat-title">{chat.title}</span>
-        {chat.status === "running" && (
-          <span className="spinner" aria-label="Running" />
-        )}
+        <span className={styles.chatTitle}>{chat.title}</span>
+        {chat.status === "running" && <Spinner label="Running" />}
       </a>
       <button
         type="button"
-        className="icon-button chat-action"
+        className={cx(ui.iconButton, styles.chatAction)}
         aria-label={chat.archived ? "Unarchive chat" : "Archive chat"}
         title={chat.archived ? "Unarchive" : "Archive"}
         onClick={() => onArchive(chat.id, !chat.archived)}
@@ -76,33 +84,39 @@ export function Sidebar({
 
   return (
     <>
-      <div className={`backdrop${open ? " visible" : ""}`} onClick={onClose} />
-      <nav className={`sidebar${open ? " open" : ""}`} aria-label="Chats">
-        <div className="sidebar-top">
-          <span className="brand">clnk</span>
+      <div
+        className={cx(styles.backdrop, open && styles.visible)}
+        onClick={onClose}
+      />
+      <nav
+        className={cx(styles.sidebar, open && styles.open)}
+        aria-label="Chats"
+      >
+        <div className={styles.top}>
+          <span className={styles.brand}>clnk</span>
           <button
             type="button"
-            className="icon-button"
+            className={cx(ui.iconButton, styles.settingsButton)}
             aria-label="Display settings"
             title="Display settings"
             onClick={onOpenSettings}
           >
             <LuSlidersHorizontal size={16} aria-hidden />
           </button>
-          <a className="new-chat-button" href="#/" onClick={onClose}>
+          <a className={styles.newChatButton} href="#/" onClick={onClose}>
             + New chat
           </a>
         </div>
-        <ul className="chat-list">
+        <ul className={styles.chatList}>
           {current?.map(item)}
           {current?.length === 0 && (
-            <li className="chat-list-empty">No chats yet</li>
+            <li className={styles.empty}>No chats yet</li>
           )}
           {archived.length > 0 && (
             <li>
               <button
                 type="button"
-                className="disclosure archived-toggle"
+                className={cx(ui.disclosure, styles.archivedToggle)}
                 aria-expanded={showArchived}
                 onClick={() => setShowArchived(!showArchived)}
               >
@@ -112,17 +126,17 @@ export function Sidebar({
           )}
           {showArchived && archived.map(item)}
         </ul>
-        <div className="sidebar-footer">
+        <div className={styles.footer}>
           <span
-            className={`connection connection-${connection}`}
+            className={cx(styles.connection, CONNECTION_CLASS[connection])}
             title={CONNECTION_LABEL[connection]}
           />
-          <span className="backend-url" title={backendUrl}>
+          <span className={styles.backendUrl} title={backendUrl}>
             {backendUrl.replace(/^https?:\/\//, "")}
           </span>
           <button
             type="button"
-            className="link-button"
+            className={ui.linkButton}
             onClick={onChangeBackend}
           >
             Change

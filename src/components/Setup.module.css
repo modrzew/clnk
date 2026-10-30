@@ -1,0 +1,67 @@
+.setup {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.card p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.card input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  outline: none;
+}
+
+.card input:focus {
+  border-color: var(--accent);
+}
+
+.error {
+  font-size: 14px;
+  color: var(--danger);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.actions button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.actions button.secondary {
+  background: none;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.actions button:disabled {
+  opacity: 0.5;
+}

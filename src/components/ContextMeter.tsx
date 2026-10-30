@@ -1,4 +1,6 @@
 import type { ContextUsage } from "../../shared/protocol";
+import { cx } from "../lib/cx";
+import styles from "./ContextMeter.module.css";
 
 /** Above this share of the context window, the meter is highlighted. */
 const HIGH_PERCENT = 80;
@@ -14,7 +16,10 @@ export function ContextMeter({ context }: { context: ContextUsage | null }) {
       : `${tokens.toLocaleString()} of ${contextWindow.toLocaleString()} tokens in context (${percent}%)`;
   return (
     <span
-      className={`context-meter${percent !== null && percent >= HIGH_PERCENT ? " high" : ""}`}
+      className={cx(
+        styles.meter,
+        percent !== null && percent >= HIGH_PERCENT && styles.high,
+      )}
       title={title}
     >
       {tokens === null ? "?" : formatTokens(tokens)} /{" "}
