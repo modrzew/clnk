@@ -50,6 +50,7 @@ jobs:
           echo "${latest:-No release yet} -> v$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "previous=${latest:-}" >> "$GITHUB_OUTPUT"
 
       - name: Set the version in the code
         env:
@@ -78,7 +79,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-        run: gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+          PREV: ${{ steps.version.outputs.previous }}
+        run: |
+          # One bullet per commit since the previous release (all history for the first one).
+          git log --no-merges --pretty='- %s' "${PREV:+$PREV..}$TAG" > release-notes.md
+          gh release create "$TAG" --title "$TAG" --notes-file release-notes.md --verify-tag
 
   # Releases made with GITHUB_TOKEN don't trigger other workflows, so the image is built from here.
   docker:
