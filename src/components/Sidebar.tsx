@@ -31,6 +31,9 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onNewProject: () => void;
   onArchive: (chatId: string, archived: boolean) => void;
+  /** The latest release's version when a newer one is out, else null. */
+  updateVersion: string | null;
+  onOpenUpdate: () => void;
 }
 
 const CONNECTION_LABEL: Record<ConnectionStatus, string> = {
@@ -58,6 +61,8 @@ export function Sidebar({
   onOpenSettings,
   onNewProject,
   onArchive,
+  updateVersion,
+  onOpenUpdate,
 }: SidebarProps) {
   const [showArchived, setShowArchived] = useState(false);
   const [showArchivedProjects, setShowArchivedProjects] = useState(false);
@@ -256,6 +261,17 @@ export function Sidebar({
             {showArchived && archived.map(chatItem)}
           </ul>
         </div>
+        {updateVersion && (
+          <div className={styles.updateBar}>
+            <button
+              type="button"
+              className={styles.updateButton}
+              onClick={onOpenUpdate}
+            >
+              Update to {updateVersion}
+            </button>
+          </div>
+        )}
         <div className={styles.footer}>
           <span
             className={cx(styles.connection, CONNECTION_CLASS[connection])}

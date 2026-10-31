@@ -7,6 +7,11 @@ pub fn run() {
     // Stands in for the web Notification API, which the desktop webviews don't have.
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_notification::init());
+    // The desktop app updates itself from the GitHub releases, then relaunches into the new version.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
     // Closing the window keeps the app running, like other Mac apps, so finished chats still notify.
     #[cfg(target_os = "macos")]
     let builder = builder.on_window_event(|window, event| {

@@ -7,6 +7,7 @@ import { ProjectView } from "./components/ProjectView";
 import { Settings } from "./components/Settings";
 import { Login, Setup } from "./components/Setup";
 import { Sidebar } from "./components/Sidebar";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { BackendClient } from "./lib/client";
 import {
   navigate,
@@ -18,6 +19,7 @@ import {
   useUser,
 } from "./lib/hooks";
 import { useChatNotifications } from "./lib/notifications";
+import { useUpdateCheck } from "./lib/updates";
 import styles from "./App.module.css";
 
 const BACKEND_URL_KEY = "clnk.backendUrl";
@@ -112,6 +114,8 @@ function Shell({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const availableUpdate = useUpdateCheck();
   const [error, setError] = useState<string | null>(null);
   const openSidebar = () => setSidebarOpen(true);
   const findProject = (projectId: string | null | undefined) =>
@@ -176,7 +180,15 @@ function Shell({
             .updateChat(chatId, { archived })
             .catch((err: Error) => setError(err.message));
         }}
+        updateVersion={availableUpdate?.version ?? null}
+        onOpenUpdate={() => setUpdateOpen(true)}
       />
+      {updateOpen && availableUpdate && (
+        <UpdateDialog
+          update={availableUpdate}
+          onClose={() => setUpdateOpen(false)}
+        />
+      )}
       <Settings
         open={settingsOpen}
         client={client}

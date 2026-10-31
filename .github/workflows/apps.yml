@@ -25,10 +25,20 @@ jobs:
     runs-on: macos-latest
     env:
       TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      # Signs the update package; the matching public key is in src-tauri/tauri.conf.json.
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
+
+      - name: Check the updater signing key
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::The TAURI_SIGNING_PRIVATE_KEY secret is missing, so the app can't be signed for auto-update"
+            exit 1
+          fi
+
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -37,12 +47,44 @@ jobs:
         with:
           workspaces: src-tauri
       - run: bun install --frozen-lockfile
-      - run: bun tauri build --target aarch64-apple-darwin --bundles dmg
+      # With bundle.createUpdaterArtifacts the build also packs the .app into a signed
+      # .app.tar.gz for the updater. It only does that when the app bundle is a target,
+      # and without it the build deletes the .app after making the .dmg.
+      - run: bun tauri build --target aarch64-apple-darwin --bundles app,dmg
 
-      - name: Attach the .dmg to the release
+      # The updater finds the archive and its signature through the latest.json manifest.
+      - name: Write the update manifest
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg --clobber
+        run: |
+          version=${TAG#v}
+          macos=src-tauri/target/aarch64-apple-darwin/release/bundle/macos
+          archive="clnk_${version}_aarch64.app.tar.gz"
+          mv "$macos/clnk.app.tar.gz" "$macos/$archive"
+          mv "$macos/clnk.app.tar.gz.sig" "$macos/$archive.sig"
+          notes=$(gh release view "$TAG" --json body -q .body)
+          published=$(gh release view "$TAG" --json publishedAt -q .publishedAt)
+          jq -n \
+            --arg version "$version" \
+            --arg notes "$notes" \
+            --arg pub_date "$published" \
+            --arg url "https://github.com/modrzew/clnk/releases/download/$TAG/$archive" \
+            --arg signature "$(cat "$macos/$archive.sig")" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: {"darwin-aarch64": {url: $url, signature: $signature}}}' \
+            > "$macos/latest.json"
+
+      - name: Attach the .dmg and the updater artifacts to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bundle=src-tauri/target/aarch64-apple-darwin/release/bundle
+          gh release upload "$TAG" \
+            "$bundle"/dmg/*.dmg \
+            "$bundle"/macos/*.app.tar.gz \
+            "$bundle"/macos/*.app.tar.gz.sig \
+            --clobber
+          # Last, so the app never finds a manifest pointing at an archive that isn't there yet.
+          gh release upload "$TAG" "$bundle/macos/latest.json" --clobber
 
   # 64-bit ARM only, which is what current phones run.
   android:

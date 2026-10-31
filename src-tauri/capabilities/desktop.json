@@ -1,12 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
-  "description": "Notifications for the main window. Only the desktop app has the plugin.",
+  "description": "Notifications and self-updates for the main window. Only the desktop app has the plugins.",
   "windows": ["main"],
   "platforms": ["macOS", "windows", "linux"],
   "permissions": [
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
-    "notification:allow-notify"
+    "notification:allow-notify",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

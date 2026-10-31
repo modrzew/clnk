@@ -102,7 +102,7 @@ jobs:
     uses: ./.github/workflows/apps.yml
     with:
       tag: ${{ needs.release.outputs.tag }}
-    # For the Android signing key.
+    # For the Android and updater signing keys.
     secrets: inherit
     permissions:
       contents: write

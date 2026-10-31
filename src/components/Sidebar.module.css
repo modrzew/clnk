@@ -194,6 +194,25 @@
   color: var(--text-muted);
 }
 
+.updateBar {
+  padding: 10px 12px 0;
+}
+
+.updateButton {
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.updateButton:hover {
+  filter: brightness(1.08);
+}
+
 .backendUrl {
   flex: 1;
   min-width: 0;
