@@ -33,7 +33,9 @@ import {
 } from "./attachments";
 import type { ChatRow, Db } from "./db";
 import { imageFile } from "./files";
+import type { McpService } from "./mcp";
 import {
+  closeChatSession,
   compactionMarker,
   hasModel,
   openChatSession,
@@ -79,6 +81,7 @@ export interface ChatServiceOptions {
   db: Db;
   pi: PiHost;
   projects: ProjectService;
+  mcp: McpService;
   dataDir: string;
   publish: Publish;
   /** How long an idle chat keeps its Pi session loaded. */
@@ -145,7 +148,7 @@ export class ChatService {
     try {
       await this.sendWithFiles(chat, message, files);
     } catch (error) {
-      this.unload(chat.id);
+      await this.unload(chat.id);
       const { sessionFile } = this.getChat(userId, chat.id);
       this.options.db.deleteChat(chat.id);
       this.options.publish(userTopic(userId), {
@@ -279,7 +282,9 @@ export class ChatService {
       [...this.runtimes.values()].map((runtime) => runtime.session.abort()),
     );
     await Promise.allSettled(this.runs);
-    for (const chatId of [...this.runtimes.keys()]) this.unload(chatId);
+    await Promise.allSettled(
+      [...this.runtimes.keys()].map((chatId) => this.unload(chatId)),
+    );
   }
 
   /** Saves the files in the chat folder and sends the message with them. */
@@ -490,6 +495,7 @@ export class ChatService {
       sessionDir,
       sessionFile: chat.sessionFile ? join(dataDir, chat.sessionFile) : null,
       model: chat.model,
+      mcp: this.options.mcp.forUser(chat.userId),
       project: chat.projectId
         ? this.projectHooks(chat.projectId, cwd)
         : undefined,
@@ -694,7 +700,7 @@ export class ChatService {
       this.publishFinished(chatId, runtime);
     }
     runtime.idleTimer = setTimeout(
-      () => this.unload(chatId),
+      () => void this.unload(chatId),
       this.idleTimeoutMs,
     );
   }
@@ -721,13 +727,13 @@ export class ChatService {
     });
   }
 
-  private unload(chatId: string) {
+  private async unload(chatId: string) {
     const runtime = this.runtimes.get(chatId);
     if (!runtime) return;
     clearTimeout(runtime.idleTimer);
     runtime.unsubscribe();
-    runtime.session.dispose();
     this.runtimes.delete(chatId);
+    await closeChatSession(runtime.session);
   }
 
   private publishChat(chatId: string) {

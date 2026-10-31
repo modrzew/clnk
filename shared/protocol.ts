@@ -167,6 +167,50 @@ export interface ProjectSummary {
   updatedAt: number;
 }
 
+/** A user's own MCP server, in the shape of an entry of Pi's mcp.json. Values are taken literally. */
+export type McpServerConfig = McpHttpServerConfig | McpStdioServerConfig;
+
+interface McpServerConfigBase {
+  /** What the server offers, in a sentence. Pi lists the server to the model with it. */
+  description?: string;
+  /** Default: true. */
+  enabled?: boolean;
+  /** How Pi's model reaches the tools. Default: `codemode`. See Pi's MCP docs. */
+  exposure?: "codemode" | "deferred" | "direct" | "hidden";
+}
+
+/** A remote server, over streamable HTTP. Without an Authorization header, it can ask to sign in. */
+export interface McpHttpServerConfig extends McpServerConfigBase {
+  url: string;
+  headers?: Record<string, string>;
+}
+
+/** A command the backend runs, once for every chat with a loaded Pi session. */
+export interface McpStdioServerConfig extends McpServerConfigBase {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+export interface McpServerInfo {
+  /** Unique among the global servers and the user's own. Pi names the tools `mcp__<name>__<tool>`. */
+  name: string;
+  /** From Pi's mcp.json on the backend, shared by every user. Its config stays on the backend. */
+  global: boolean;
+  /** Empty when there is none. */
+  description: string;
+  enabled: boolean;
+  /** Of the user's own servers. Null for global ones. */
+  config: McpServerConfig | null;
+  /**
+   * Whether someone signed in to the server: the user to their own, anyone to a global one, which then
+   * is for everyone. Null when the server doesn't ask for it.
+   */
+  signedIn: boolean | null;
+  /** A user's server that a global server added later with the same name replaces. */
+  hidden: boolean;
+}
+
 // REST: JSON bodies under /api. Failed requests return ErrorResponse with a 4xx/5xx status.
 //
 // Every request but GET /api/health and POST /api/auth/login needs the token from logging in, as
@@ -317,6 +361,50 @@ export interface UploadArtefactResponse {
   artefact: ArtefactInfo;
 }
 
+/**
+ * GET /api/mcp: the MCP servers in the user's chats. Global ones first, then the user's own, each
+ * sorted by name.
+ */
+export interface McpServersResponse {
+  servers: McpServerInfo[];
+}
+
+/** POST /api/mcp/servers: adds a server of the user's. 409 if the name is taken. */
+export interface CreateMcpServerRequest {
+  name: string;
+  config: McpServerConfig;
+}
+
+/** PUT /api/mcp/servers/:name: replaces the config of a server of the user's. It keeps its name. */
+export interface UpdateMcpServerRequest {
+  config: McpServerConfig;
+}
+
+export interface McpServerResponse {
+  server: McpServerInfo;
+}
+
+/*
+ * DELETE /api/mcp/servers/:name deletes a server of the user's, and the user's sign-in to it.
+ *
+ * Signing in, to the user's own servers and global ones alike, with the server name URL-encoded. A
+ * sign-in to a global server is everyone's, and so is signing out of one:
+ * 1. POST /api/mcp/servers/:name/login starts it, with StartMcpLoginResponse.
+ * 2. The user opens the authorization URL and allows access. The browser is then sent to a page on
+ *    127.0.0.1 that doesn't load.
+ * 3. POST /api/mcp/servers/:name/redirect with FinishMcpLoginRequest: the address of that page.
+ * POST /api/mcp/servers/:name/logout deletes the user's sign-in. Open chats use the change on their next
+ * turn.
+ */
+export interface StartMcpLoginResponse {
+  /** Null when no browser was needed: the stored sign-in could be renewed. */
+  authorizationUrl: string | null;
+}
+
+export interface FinishMcpLoginRequest {
+  url: string;
+}
+
 export interface ErrorResponse {
   error: string;
 }
@@ -349,6 +437,11 @@ export type ServerMessage =
   | { type: "chat_updated"; chat: ChatSummary }
   /** Sent to every connected client of the chat's owner, e.g. when creating the chat failed. */
   | { type: "chat_deleted"; chatId: string }
+  /**
+   * Sent to every connected client of the user when their MCP servers or sign-ins change, including
+   * sign-ins to global servers by anyone.
+   */
+  | { type: "mcp_servers"; servers: McpServerInfo[] }
   /**
    * Sent to every connected client of the chat's owner when Pi is done with the chat: it ran, and
    * nothing is running or about to anymore. Not sent when the run was stopped. For notifications.

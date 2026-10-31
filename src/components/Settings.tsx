@@ -15,6 +15,7 @@ import {
   useDisplayPrefs,
 } from "../lib/prefs";
 import { Dialog } from "./Dialog";
+import { McpServers } from "./McpServers";
 import styles from "./Settings.module.css";
 import ui from "./ui.module.css";
 
@@ -36,6 +37,16 @@ export function Settings({
   return (
     <Dialog open={open} onClose={onClose} title="Settings">
       <AccountSettings client={client} user={user} onLogOut={onLogOut} />
+      <section className={styles.section}>
+        <h3 className={styles.heading}>MCP servers</h3>
+        <p className={styles.text}>
+          Tools Pi can use in your chats. Shared ones are set up on the server
+          for everyone, and signing in to one signs everyone in. The ones you
+          add are only yours.
+        </p>
+        {/* Fetched each time, since the shared ones come from a file on the server. */}
+        {open && <McpServers client={client} />}
+      </section>
       {notificationSupport !== "unsupported" && <NotificationSettings />}
       <section className={styles.section}>
         <h3 className={styles.heading}>Display</h3>

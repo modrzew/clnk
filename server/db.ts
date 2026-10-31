@@ -1,5 +1,9 @@
 import { Database } from "bun:sqlite";
-import type { ContextUsage, ModelRef } from "../shared/protocol";
+import type {
+  ContextUsage,
+  McpServerConfig,
+  ModelRef,
+} from "../shared/protocol";
 
 export interface UserRow {
   id: string;
@@ -67,6 +71,23 @@ interface RawProjectRow {
   updated_at: number;
 }
 
+export interface McpServerRow {
+  userId: string;
+  /** Unique per user, and can't change: the user's sign-in to the server is kept under it. */
+  name: string;
+  config: McpServerConfig;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface RawMcpServerRow {
+  user_id: string;
+  name: string;
+  config: string;
+  created_at: number;
+  updated_at: number;
+}
+
 const MIGRATIONS = [
   `CREATE TABLE users (
     id TEXT PRIMARY KEY,
@@ -106,6 +127,21 @@ const MIGRATIONS = [
     created_at INTEGER NOT NULL
   );
   CREATE INDEX sessions_user ON sessions (user_id);`,
+  `CREATE TABLE mcp_servers (
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    config TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, name)
+  );
+  -- owner is a user's id, or empty for sign-ins to global servers, which every user shares.
+  CREATE TABLE mcp_auth (
+    owner TEXT NOT NULL,
+    key TEXT NOT NULL,
+    state TEXT NOT NULL,
+    PRIMARY KEY (owner, key)
+  );`,
 ];
 
 export class Db {
@@ -323,6 +359,79 @@ export class Db {
       );
   }
 
+  listMcpServers(userId: string): McpServerRow[] {
+    const rows = this.db
+      .query("SELECT * FROM mcp_servers WHERE user_id = ? ORDER BY name")
+      .all(userId) as RawMcpServerRow[];
+    return rows.map(toMcpServerRow);
+  }
+
+  getMcpServer(userId: string, name: string): McpServerRow | null {
+    const row = this.db
+      .query("SELECT * FROM mcp_servers WHERE user_id = ? AND name = ?")
+      .get(userId, name) as RawMcpServerRow | null;
+    return row ? toMcpServerRow(row) : null;
+  }
+
+  insertMcpServer(server: McpServerRow) {
+    this.db
+      .query(
+        "INSERT INTO mcp_servers (user_id, name, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(
+        server.userId,
+        server.name,
+        JSON.stringify(server.config),
+        server.createdAt,
+        server.updatedAt,
+      );
+  }
+
+  updateMcpServer(server: McpServerRow) {
+    this.db
+      .query(
+        "UPDATE mcp_servers SET config = ?, updated_at = ? WHERE user_id = ? AND name = ?",
+      )
+      .run(
+        JSON.stringify(server.config),
+        server.updatedAt,
+        server.userId,
+        server.name,
+      );
+  }
+
+  deleteMcpServer(userId: string, name: string) {
+    this.db
+      .query("DELETE FROM mcp_servers WHERE user_id = ? AND name = ?")
+      .run(userId, name);
+  }
+
+  /** OAuth state for an MCP server, as JSON. `owner` is a user's id, or empty for the shared one. */
+  getMcpAuth(owner: string, key: string): string | null {
+    const row = this.db
+      .query("SELECT state FROM mcp_auth WHERE owner = ? AND key = ?")
+      .get(owner, key) as { state: string } | null;
+    return row?.state ?? null;
+  }
+
+  setMcpAuth(owner: string, key: string, state: string) {
+    this.db
+      .query(
+        `INSERT INTO mcp_auth (owner, key, state) VALUES (?, ?, ?)
+         ON CONFLICT (owner, key) DO UPDATE SET state = excluded.state`,
+      )
+      .run(owner, key, state);
+  }
+
+  /** Returns whether there was any. */
+  deleteMcpAuth(owner: string, key: string): boolean {
+    return (
+      this.db
+        .query("DELETE FROM mcp_auth WHERE owner = ? AND key = ?")
+        .run(owner, key).changes > 0
+    );
+  }
+
   close() {
     this.db.close();
   }
@@ -350,6 +459,16 @@ function toChatRow(row: RawChatRow): ChatRow {
       row.context_window === null
         ? null
         : { tokens: row.context_tokens, contextWindow: row.context_window },
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toMcpServerRow(row: RawMcpServerRow): McpServerRow {
+  return {
+    userId: row.user_id,
+    name: row.name,
+    config: JSON.parse(row.config) as McpServerConfig,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

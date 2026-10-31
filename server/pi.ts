@@ -11,11 +11,17 @@ import {
   defineTool,
   getAgentDir,
   type InlineExtension,
+  type McpExtensionOptions,
+  type McpServerConfig,
   ModelRuntime,
   type SessionEntry,
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import type {
+  McpOAuthState,
+  McpOAuthStateStore,
+} from "@earendil-works/pi-mcp/oauth";
 import type {
   ArtefactInfo,
   ChatMessage,
@@ -37,15 +43,24 @@ export interface PiHost {
   modelRuntime: ModelRuntime;
   /** Pi's global config dir (~/.pi/agent): settings, models.json, MCP, extensions. */
   agentDir: string;
-  /** Load extensions, MCP, codemode and tool search like the CLI does. Tests turn this off. */
+  /** Load extensions, codemode and tool search like the CLI does. Tests turn this off. */
   extensions: boolean;
+  /** Connect MCP servers, the global ones from Pi's mcp.json and each user's own. Off when null. */
+  mcp: McpHost | null;
 }
+
+/** Where the global MCP servers come from and how Pi connects to servers. Pi's own by default; tests replace them. */
+export type McpHost = Pick<
+  McpExtensionOptions,
+  "loadConfig" | "createTransport"
+>;
 
 export async function createPiHost(): Promise<PiHost> {
   return {
     modelRuntime: await ModelRuntime.create(),
     agentDir: getAgentDir(),
     extensions: true,
+    mcp: {},
   };
 }
 
@@ -87,8 +102,39 @@ export interface ChatSessionOptions {
   /** Existing transcript to continue. A new one is started when null or missing. */
   sessionFile: string | null;
   model: ModelRef;
+  /** The chat owner's MCP servers and sign-ins. */
+  mcp: UserMcp;
   /** For chats in a project. */
   project?: ProjectHooks;
+}
+
+/** What a chat's session needs of its owner's MCP servers. */
+export interface UserMcp {
+  /** The user's own servers, by name. Read when the session opens and on every change. */
+  servers(): Map<string, McpServerConfig>;
+  /** Calls `listener` when the user's servers change. Returns a function that stops it. */
+  onChange(listener: () => void): () => void;
+  /** The user's OAuth sign-ins, to their own servers and global ones. */
+  credentials: McpCredentials;
+  /** Where Pi logs what the user's servers report. */
+  logPath: string;
+}
+
+/**
+ * What Pi uses of its OAuth credential store, which keeps every MCP sign-in in ~/.pi/agent otherwise.
+ * Pi doesn't export the class, so this stands in for it.
+ */
+export interface McpCredentials {
+  forServer(name: string, serverUrl: string): McpServerCredentials;
+  /** For noticing sign-ins: Pi reconnects servers whose tokens changed on the next turn. */
+  tokens(name: string, serverUrl: string): McpOAuthState["tokens"];
+  /** Returns whether there were any. */
+  remove(name: string, serverUrl: string): boolean;
+}
+
+export interface McpServerCredentials extends McpOAuthStateStore {
+  /** Runs `fn` while no other refresh of the server's tokens runs. */
+  withRefreshLock<T>(fn: () => Promise<T>): Promise<T>;
 }
 
 /** What a chat's session needs from its project. */
@@ -123,6 +169,7 @@ export async function openChatSession(
     noExtensions: !host.extensions,
     extensionFactories: [
       ...(host.extensions ? builtinExtensions() : []),
+      ...(host.mcp ? mcpExtensions(host, host.mcp, options.mcp) : []),
       ...(options.project ? [projectExtension(options.project)] : []),
     ],
     appendSystemPrompt: [chatInstructions(options.cwd)],
@@ -157,6 +204,19 @@ export async function openChatSession(
   return session;
 }
 
+/** Ends the session like the CLI does on quit: extensions shut down first, which closes MCP servers. */
+export async function closeChatSession(session: AgentSession) {
+  try {
+    await session.extensionRunner.emit({
+      type: "session_shutdown",
+      reason: "quit",
+    });
+  } catch (error) {
+    console.warn(`Pi extensions failed to shut down: ${String(error)}`);
+  }
+  session.dispose();
+}
+
 /** The SDK doesn't load the CLI's built-in extensions, so register them the same way the CLI does. */
 function builtinExtensions(): InlineExtension[] {
   return [
@@ -172,13 +232,72 @@ function builtinExtensions(): InlineExtension[] {
       replaceable: true,
       builtin: true,
     },
+  ];
+}
+
+/** Pi's MCP support, signing in as the chat's owner, and the owner's own servers. */
+function mcpExtensions(
+  host: PiHost,
+  mcp: McpHost,
+  user: UserMcp,
+): InlineExtension[] {
+  return [
     {
       name: "mcp",
-      factory: createMcpExtension(),
+      factory: createMcpExtension({
+        ...mcp,
+        // Has what Pi uses of the class it expects.
+        credentials:
+          user.credentials as unknown as McpExtensionOptions["credentials"],
+        logPath: user.logPath,
+      }),
       replaceable: true,
-      builtin: true,
+      // Pi only loads built-in extensions along with the others, which tests leave out.
+      builtin: host.extensions,
     },
+    userServersExtension(user),
   ];
+}
+
+/**
+ * Adds the user's own MCP servers to the session, and changes them in it when the user does. A server
+ * in mcp.json with the same name takes precedence.
+ */
+function userServersExtension(user: UserMcp): InlineExtension {
+  return {
+    name: "clnk-mcp",
+    factory: (pi) => {
+      /** Config of each server added, as JSON. */
+      const added = new Map<string, string>();
+      const sync = () => {
+        const servers = user.servers();
+        for (const name of added.keys()) {
+          if (servers.has(name)) continue;
+          added.delete(name);
+          try {
+            pi.unregisterMcpServer(name);
+          } catch (error) {
+            console.warn(
+              `Failed to remove MCP server ${name}: ${String(error)}`,
+            );
+          }
+        }
+        for (const [name, config] of servers) {
+          const json = JSON.stringify(config);
+          if (added.get(name) === json) continue;
+          try {
+            pi.registerMcpServer(name, config);
+            added.set(name, json);
+          } catch (error) {
+            console.warn(`Failed to add MCP server ${name}: ${String(error)}`);
+          }
+        }
+      };
+      sync();
+      const stop = user.onChange(sync);
+      pi.on("session_shutdown", () => stop());
+    },
+  };
 }
 
 /** Adds the project to the system prompt and lets Pi save artefacts. Loaded even when other extensions aren't. */

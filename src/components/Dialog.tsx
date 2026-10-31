@@ -26,7 +26,10 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
       ref={ref}
       className={styles.dialog}
       aria-labelledby={titleId}
-      onClose={onClose}
+      // React passes on close events of dialogs opened from this one's content.
+      onClose={(event) => {
+        if (event.target === ref.current) onClose();
+      }}
       // A click on the dialog itself, not its content, is on the backdrop. A drag that started in the
       // content, e.g. selecting text in a field, isn't.
       onPointerDown={(event) => {

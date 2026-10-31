@@ -23,6 +23,7 @@ import type {
   ChatSummary,
   ClientMessage,
   LoginResponse,
+  McpServerInfo,
   ModelRef,
   ProjectSummary,
   ServerMessage,
@@ -35,7 +36,7 @@ import {
 import { type App, startApp } from "./app";
 import { AuthService } from "./auth";
 import { Db } from "./db";
-import type { PiHost } from "./pi";
+import type { McpHost, PiHost } from "./pi";
 
 const MODEL: ModelRef = { provider: "faux", id: "faux-1" };
 
@@ -64,23 +65,35 @@ async function createHost(
   modelRuntime.registerNativeProvider(faux.provider);
   await modelRuntime.setRuntimeApiKey("faux", "test");
   return {
-    host: { modelRuntime, agentDir: join(dir, "agent"), extensions: false },
+    host: {
+      modelRuntime,
+      agentDir: join(dir, "agent"),
+      extensions: false,
+      mcp: null,
+    },
     faux,
   };
 }
 
 async function setup(
-  options: { dataDir?: string; tokensPerSecond?: number } = {},
+  options: {
+    dataDir?: string;
+    tokensPerSecond?: number;
+    /** Connects MCP servers. */
+    mcp?: McpHost;
+    idleTimeoutMs?: number;
+  } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), "clnk-test-"));
   const dataDir = options.dataDir ?? join(dir, "data");
   const { host, faux } = await createHost(dir, options.tokensPerSecond);
+  host.mcp = options.mcp ?? null;
   // A restarted server has the account already.
   if (!options.dataDir) await addUser(dataDir, "alice");
   const app = startApp({
     config: { host: "127.0.0.1", port: 0, dataDir, webDir: null },
     pi: host,
-    idleTimeoutMs: 50,
+    idleTimeoutMs: options.idleTimeoutMs ?? 50,
   });
   let stopped = false;
   const stop = async () => {
@@ -94,6 +107,7 @@ async function setup(
     app,
     faux,
     dataDir,
+    agentDir: host.agentDir,
     stop,
     token,
     userId: user.id,
@@ -101,6 +115,16 @@ async function setup(
     connect: () => TestClient.connect(app, token),
     /** Fetches a file the way links do, with the token in the URL. */
     download: (path: string) => fetch(withToken(new URL(path, app.url), token)),
+    /** Adds another account, logged in. */
+    otherUser: async (name: string) => {
+      await addUser(dataDir, name);
+      const other = await login(app, name);
+      return {
+        api: (path: string, init?: RequestInit) =>
+          request(app, path, init, other.token),
+        connect: () => TestClient.connect(app, other.token),
+      };
+    },
   };
 }
 
@@ -294,7 +318,7 @@ function userTimestamp(state: TranscriptState, text: string): number {
 
 /** Creates a chat and waits until its first run is done. */
 async function startChat(
-  { connect, api }: Awaited<ReturnType<typeof setup>>,
+  { connect, api }: Pick<Awaited<ReturnType<typeof setup>>, "connect" | "api">,
   message = "Hi",
 ) {
   const client = await connect();
@@ -314,6 +338,157 @@ async function waitForReply(client: TestClient, chatId: string, text: string) {
 
 function patch(body: unknown): RequestInit {
   return { method: "PATCH", body: JSON.stringify(body) };
+}
+
+/** Each tool result in the chat: the tool, whether it failed, and its text. */
+function toolResults(client: TestClient, chatId: string) {
+  return client
+    .transcript(chatId)
+    .messages.flatMap((message) =>
+      message.role === "toolResult"
+        ? [
+            [
+              message.toolName,
+              message.isError,
+              message.content
+                .map((part) => (part.type === "text" ? part.text : ""))
+                .join(""),
+            ],
+          ]
+        : [],
+    );
+}
+
+async function waitUntil(predicate: () => boolean, timeoutMs = 5000) {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) throw new Error("Timed out");
+    await Bun.sleep(10);
+  }
+}
+
+/**
+ * An MCP server over streamable HTTP at /mcp, with an `echo` tool. With `oauth`, it takes requests
+ * with the token its authorization server hands out for the code `code-1` only.
+ */
+function startMcpServer({ oauth = false } = {}) {
+  /** Methods of the JSON-RPC requests and notifications it got. */
+  const methods: string[] = [];
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(req) {
+      const url = new URL(req.url);
+      const { origin } = url;
+      switch (url.pathname) {
+        case "/mcp": {
+          if (oauth && req.headers.get("Authorization") !== "Bearer token-1")
+            return new Response("Sign in first", {
+              status: 401,
+              headers: {
+                "WWW-Authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
+              },
+            });
+          if (req.method !== "POST") return new Response(null, { status: 405 });
+          const message = (await req.json()) as {
+            id?: number;
+            method: string;
+            params: any;
+          };
+          methods.push(message.method);
+          if (message.id === undefined)
+            return new Response(null, { status: 202 });
+          return Response.json({
+            jsonrpc: "2.0",
+            id: message.id,
+            result: mcpResult(message.method, message.params),
+          });
+        }
+        case "/.well-known/oauth-protected-resource/mcp":
+          return Response.json({
+            resource: `${origin}/mcp`,
+            authorization_servers: [origin],
+          });
+        case "/.well-known/oauth-authorization-server":
+          return Response.json({
+            issuer: origin,
+            authorization_endpoint: `${origin}/authorize`,
+            token_endpoint: `${origin}/token`,
+            registration_endpoint: `${origin}/register`,
+            response_types_supported: ["code"],
+            grant_types_supported: ["authorization_code", "refresh_token"],
+            code_challenge_methods_supported: ["S256"],
+            token_endpoint_auth_methods_supported: ["none"],
+          });
+        case "/register":
+          return Response.json(
+            { ...((await req.json()) as object), client_id: "client-1" },
+            { status: 201 },
+          );
+        case "/token": {
+          const form = new URLSearchParams(await req.text());
+          if (form.get("code") !== "code-1" || !form.get("code_verifier"))
+            return Response.json({ error: "invalid_grant" }, { status: 400 });
+          return Response.json({
+            access_token: "token-1",
+            token_type: "Bearer",
+            expires_in: 3600,
+            refresh_token: "refresh-1",
+          });
+        }
+      }
+      return new Response("Not found", { status: 404 });
+    },
+  });
+  cleanup.push(() => server.stop(true));
+  return {
+    origin: server.url.origin,
+    url: `${server.url.origin}/mcp`,
+    methods,
+  };
+}
+
+function mcpResult(method: string, params: any) {
+  switch (method) {
+    case "initialize":
+      return {
+        protocolVersion: params.protocolVersion,
+        capabilities: { tools: {} },
+        serverInfo: { name: "test", version: "1.0.0" },
+      };
+    case "tools/list":
+      return {
+        tools: [
+          {
+            name: "echo",
+            description: "Echoes the text",
+            inputSchema: {
+              type: "object",
+              properties: { text: { type: "string" } },
+            },
+          },
+        ],
+      };
+    case "tools/call":
+      return {
+        content: [{ type: "text", text: `echo: ${params.arguments.text}` }],
+      };
+  }
+  return {};
+}
+
+/** Signs in to an MCP server of startMcpServer's, as if the user pasted the address. */
+async function signIn(
+  api: Awaited<ReturnType<typeof setup>>["api"],
+  name: string,
+) {
+  const path = `/api/mcp/servers/${name}`;
+  const { body } = await api(`${path}/login`, post({}));
+  const authorization = new URL(body.authorizationUrl);
+  const redirect = new URL(authorization.searchParams.get("redirect_uri")!);
+  redirect.searchParams.set("code", "code-1");
+  redirect.searchParams.set("state", authorization.searchParams.get("state")!);
+  return api(`${path}/redirect`, post({ url: redirect.href }));
 }
 
 /** Everything the model is told up front, and told later when it changes. */
@@ -1486,6 +1661,239 @@ describe("accounts", () => {
       "projects",
       "chats",
       "error",
+    ]);
+  });
+});
+
+describe("MCP servers", () => {
+  const echo = (text: string) => [
+    fauxAssistantMessage(fauxToolCall("mcp__notes__echo", { text }), {
+      stopReason: "toolUse",
+    }),
+    fauxAssistantMessage("Done"),
+  ];
+
+  test("users add their own servers, which only their chats get", async () => {
+    const alice = await setup({
+      mcp: { loadConfig: () => ({ servers: [], errors: [] }) },
+      idleTimeoutMs: 60_000,
+    });
+    const notes = startMcpServer();
+    // The chat is open before the server is added.
+    alice.faux.setResponses([fauxAssistantMessage("Hello!")]);
+    const { client, chatId } = await startChat(alice);
+
+    const config = {
+      url: notes.url,
+      description: "Alice's notes",
+      exposure: "direct",
+    };
+    const created = await alice.api(
+      "/api/mcp/servers",
+      post({ name: "notes", config }),
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.server).toEqual({
+      name: "notes",
+      global: false,
+      description: "Alice's notes",
+      enabled: true,
+      config,
+      signedIn: null,
+      hidden: false,
+    });
+    await client.waitFor(() =>
+      client.received.some(
+        (msg) => msg.type === "mcp_servers" && msg.servers.length === 1,
+      ),
+    );
+    const refused = [
+      await alice.api("/api/mcp/servers", post({ name: "notes", config })),
+      await alice.api("/api/mcp/servers", post({ name: "no tes", config })),
+      await alice.api(
+        "/api/mcp/servers",
+        post({ name: "other", config: { url: "ftp://example.com" } }),
+      ),
+      await alice.api(
+        "/api/mcp/servers",
+        post({ name: "other", config: { url: notes.url, command: "notes" } }),
+      ),
+    ];
+    expect(refused.map((response) => response.status)).toEqual([
+      409, 400, 400, 400,
+    ]);
+
+    await waitUntil(() => notes.methods.includes("tools/list"));
+    alice.faux.setResponses(echo("hi"));
+    await alice.api(`/api/chats/${chatId}/messages`, post({ message: "Echo" }));
+    await waitForReply(client, chatId, "Done");
+    expect(toolResults(client, chatId)).toEqual([
+      ["mcp__notes__echo", false, "echo: hi"],
+    ]);
+
+    const bob = await alice.otherUser("bob");
+    expect((await bob.api("/api/mcp")).body.servers).toEqual([]);
+    const notesPath = "/api/mcp/servers/notes";
+    const bobRefused = [
+      await bob.api(notesPath, {
+        method: "PUT",
+        body: JSON.stringify({ config }),
+      }),
+      await bob.api(notesPath, { method: "DELETE" }),
+      await bob.api(`${notesPath}/login`, post({})),
+    ];
+    expect(bobRefused.map((response) => response.status)).toEqual([
+      404, 404, 404,
+    ]);
+    alice.faux.setResponses(echo("hi"));
+    const bobChat = await startChat(bob, "Echo");
+    expect(toolResults(bobChat.client, bobChat.chatId)).toEqual([
+      ["mcp__notes__echo", true, expect.any(String)],
+    ]);
+    expect(
+      bobChat.client.received.some((msg) => msg.type === "mcp_servers"),
+    ).toBe(false);
+
+    // Deleting the server takes it out of the open chat.
+    expect((await alice.api(notesPath, { method: "DELETE" })).status).toBe(200);
+    alice.faux.setResponses(echo("again"));
+    await alice.api(`/api/chats/${chatId}/messages`, post({ message: "Echo" }));
+    await client.waitFor(() => toolResults(client, chatId).length === 2);
+    await waitForReply(client, chatId, "Done");
+    expect(toolResults(client, chatId)[1]).toEqual([
+      "mcp__notes__echo",
+      true,
+      expect.any(String),
+    ]);
+  });
+
+  test("signing in to a global server is for everyone, to a user's own just for them", async () => {
+    const mcp = startMcpServer({ oauth: true });
+    const entry = { url: mcp.url, exposure: "direct" as const };
+    const alice = await setup({
+      mcp: {
+        loadConfig: () => ({
+          servers: [
+            {
+              name: "tracker",
+              config: entry,
+              source: "mcp.json",
+              scope: "global",
+            },
+          ],
+          errors: [],
+        }),
+      },
+    });
+    mkdirSync(alice.agentDir, { recursive: true });
+    writeFileSync(
+      join(alice.agentDir, "mcp.json"),
+      JSON.stringify({
+        mcpServers: { tracker: { ...entry, description: "Shared tracker" } },
+      }),
+    );
+    const bob = await alice.otherUser("bob");
+    const bobClient = await bob.connect();
+    const tracker = {
+      name: "tracker",
+      global: true,
+      description: "Shared tracker",
+      enabled: true,
+      config: null,
+      signedIn: false,
+      hidden: false,
+    };
+    expect((await alice.api("/api/mcp")).body.servers).toEqual([tracker]);
+    const taken = await alice.api(
+      "/api/mcp/servers",
+      post({ name: "tracker", config: { url: mcp.url } }),
+    );
+    expect(taken.status).toBe(409);
+
+    const started = await alice.api("/api/mcp/servers/tracker/login", post({}));
+    const authorization = new URL(started.body.authorizationUrl);
+    expect(authorization.origin + authorization.pathname).toBe(
+      `${mcp.origin}/authorize`,
+    );
+    const redirect = new URL(authorization.searchParams.get("redirect_uri")!);
+    expect(redirect.hostname).toBe("127.0.0.1");
+    const state = authorization.searchParams.get("state");
+    const finish = (url: string) =>
+      alice.api("/api/mcp/servers/tracker/redirect", post({ url }));
+    const wrong = [
+      await finish(`${redirect.href}?code=code-1&state=other`),
+      await finish(`http://127.0.0.1:1/callback?code=code-1&state=${state}`),
+      await finish("nonsense"),
+    ];
+    expect(wrong.map((response) => response.status)).toEqual([400, 400, 400]);
+    // Without the scheme, as browsers tend to show it.
+    const finished = await finish(
+      `${redirect.host}${redirect.pathname}?code=code-1&state=${state}`,
+    );
+    expect(finished.status).toBe(200);
+    const signedIn = { ...tracker, signedIn: true };
+    expect((await alice.api("/api/mcp")).body.servers).toEqual([signedIn]);
+    expect((await bob.api("/api/mcp")).body.servers).toEqual([signedIn]);
+    await bobClient.waitFor(() =>
+      bobClient.received.some(
+        (msg) => msg.type === "mcp_servers" && msg.servers[0]?.signedIn,
+      ),
+    );
+
+    const call = (tool: string) => [
+      fauxAssistantMessage(fauxToolCall(tool, { text: "hi" }), {
+        stopReason: "toolUse",
+      }),
+      fauxAssistantMessage("Done"),
+    ];
+    alice.faux.setResponses(call("mcp__tracker__echo"));
+    const bobTracker = await startChat(bob, "Check the tracker");
+    expect(toolResults(bobTracker.client, bobTracker.chatId)).toEqual([
+      ["mcp__tracker__echo", false, "echo: hi"],
+    ]);
+
+    // The same server as a user's own needs that user's sign-in.
+    const mail = { url: mcp.url, exposure: "direct" };
+    for (const user of [alice, bob]) {
+      const created = await user.api(
+        "/api/mcp/servers",
+        post({ name: "mail", config: mail }),
+      );
+      expect(created.body.server.signedIn).toBe(false);
+    }
+    expect((await signIn(alice.api, "mail")).status).toBe(200);
+    const signedInTo = async (user: typeof bob) =>
+      ((await user.api("/api/mcp")).body.servers as McpServerInfo[]).map(
+        (server) => [server.name, server.signedIn],
+      );
+    expect(await signedInTo(alice)).toEqual([
+      ["tracker", true],
+      ["mail", true],
+    ]);
+    expect(await signedInTo(bob)).toEqual([
+      ["tracker", true],
+      ["mail", false],
+    ]);
+    alice.faux.setResponses(call("mcp__mail__echo"));
+    const aliceMail = await startChat(alice, "Check mail");
+    expect(toolResults(aliceMail.client, aliceMail.chatId)).toEqual([
+      ["mcp__mail__echo", false, "echo: hi"],
+    ]);
+    alice.faux.setResponses(call("mcp__mail__echo"));
+    const bobMail = await startChat(bob, "Check mail");
+    expect(toolResults(bobMail.client, bobMail.chatId)).toEqual([
+      ["mcp__mail__echo", true, expect.any(String)],
+    ]);
+
+    // Signing out of the global one is for everyone too.
+    const loggedOut = await bob.api(
+      "/api/mcp/servers/tracker/logout",
+      post({}),
+    );
+    expect(loggedOut.status).toBe(200);
+    expect(await signedInTo(alice)).toEqual([
+      ["tracker", false],
+      ["mail", true],
     ]);
   });
 });

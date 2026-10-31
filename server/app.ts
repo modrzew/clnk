@@ -12,10 +12,13 @@ import {
   type HealthResponse,
   type LoginResponse,
   MAX_REQUEST_BYTES,
+  type McpServerResponse,
+  type McpServersResponse,
   type ModelRef,
   type ProjectsResponse,
   type RewindRequest,
   type ServerMessage,
+  type StartMcpLoginResponse,
   UNAUTHORIZED_CLOSE_CODE,
   type UpdateChatRequest,
   type UpdateChatResponse,
@@ -34,6 +37,7 @@ import {
 } from "./chats";
 import type { Config } from "./config";
 import { Db, type UserRow } from "./db";
+import { McpService } from "./mcp";
 import { listModels, type PiHost } from "./pi";
 import { ProjectService } from "./projects";
 
@@ -81,10 +85,17 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
     dataDir: config.dataDir,
     publish,
   });
+  const mcp = new McpService({
+    db,
+    agentDir: pi.agentDir,
+    dataDir: config.dataDir,
+    publish,
+  });
   const chats = new ChatService({
     db,
     pi,
     projects,
+    mcp,
     dataDir: config.dataDir,
     idleTimeoutMs,
     publish,
@@ -273,6 +284,48 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
       }
       if (name !== undefined && method === "DELETE") {
         projects.deleteArtefact(userId, projectId, name);
+        return json({ ok: true });
+      }
+    }
+    if (path === "/api/mcp" && method === "GET") {
+      return json({
+        servers: await mcp.listServers(userId),
+      } satisfies McpServersResponse);
+    }
+    if (path === "/api/mcp/servers" && method === "POST") {
+      const body = await readJson(req);
+      const server = await mcp.createServer(
+        userId,
+        parseString(body.name, "name"),
+        body.config,
+      );
+      return json({ server } satisfies McpServerResponse, 201);
+    }
+    const mcpMatch = path.match(/^\/api\/mcp\/servers\/([^/]+)(\/[a-z]+)?$/);
+    if (mcpMatch) {
+      const name = decodeSegment(mcpMatch[1]);
+      const route = `${method} ${mcpMatch[2] ?? ""}`;
+      if (route === "PUT ") {
+        const body = await readJson(req);
+        const server = await mcp.updateServer(userId, name, body.config);
+        return json({ server } satisfies McpServerResponse);
+      }
+      if (route === "DELETE ") {
+        await mcp.deleteServer(userId, name);
+        return json({ ok: true });
+      }
+      if (route === "POST /login") {
+        return json({
+          authorizationUrl: await mcp.startSignIn(userId, name),
+        } satisfies StartMcpLoginResponse);
+      }
+      if (route === "POST /redirect") {
+        const body = await readJson(req);
+        await mcp.finishSignIn(userId, name, parseString(body.url, "url"));
+        return json({ ok: true });
+      }
+      if (route === "POST /logout") {
+        await mcp.signOut(userId, name);
         return json({ ok: true });
       }
     }

@@ -4,18 +4,24 @@ import {
   type ClientMessage,
   type CreateChatRequest,
   type CreateChatResponse,
+  type CreateMcpServerRequest,
   type CreateProjectRequest,
   type CreateProjectResponse,
   type ErrorResponse,
+  type FinishMcpLoginRequest,
   type HealthResponse,
   type LoginRequest,
   type LoginResponse,
+  type McpServerResponse,
+  type McpServersResponse,
   type ModelsResponse,
   type RewindRequest,
   type ServerMessage,
+  type StartMcpLoginResponse,
   UNAUTHORIZED_CLOSE_CODE,
   type UpdateChatRequest,
   type UpdateChatResponse,
+  type UpdateMcpServerRequest,
   type UpdateProjectRequest,
   type UpdateProjectResponse,
   type UploadArtefactResponse,
@@ -178,6 +184,45 @@ export class BackendClient {
     );
   }
 
+  getMcpServers() {
+    return this.request<McpServersResponse>("/api/mcp");
+  }
+
+  createMcpServer(body: CreateMcpServerRequest) {
+    return this.request<McpServerResponse>("/api/mcp/servers", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  updateMcpServer(name: string, body: UpdateMcpServerRequest) {
+    return this.request<McpServerResponse>(mcpServerPath(name), {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+
+  deleteMcpServer(name: string) {
+    return this.request(mcpServerPath(name), { method: "DELETE" });
+  }
+
+  startMcpLogin(name: string) {
+    return this.request<StartMcpLoginResponse>(`${mcpServerPath(name)}/login`, {
+      method: "POST",
+    });
+  }
+
+  finishMcpLogin(name: string, body: FinishMcpLoginRequest) {
+    return this.request(`${mcpServerPath(name)}/redirect`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  mcpLogout(name: string) {
+    return this.request(`${mcpServerPath(name)}/logout`, { method: "POST" });
+  }
+
   /** An image in the chat's folder, which Pi embeds in a reply by its path. */
   imageUrl(chatId: string, path: string) {
     return this.fileUrl(
@@ -279,6 +324,8 @@ const projectPath = (projectId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}`;
 const artefactPath = (projectId: string, name: string) =>
   `${projectPath(projectId)}/artefacts/${encodeURIComponent(name)}`;
+const mcpServerPath = (name: string) =>
+  `/api/mcp/servers/${encodeURIComponent(name)}`;
 
 /** A JSON request body, or with files, a multipart one with the JSON in its `request` field. */
 function withFiles(body: object, files: File[]): string | FormData {
