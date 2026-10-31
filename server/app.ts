@@ -50,6 +50,8 @@ export interface AppOptions {
   config: Config;
   pi: PiHost;
   idleTimeoutMs?: number;
+  /** The database, which the app closes when it stops. Opened in the data dir by default. */
+  db?: Db;
 }
 
 export interface App {
@@ -66,9 +68,14 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
+export function startApp({
+  config,
+  pi,
+  idleTimeoutMs,
+  db: openDb,
+}: AppOptions): App {
   mkdirSync(config.dataDir, { recursive: true });
-  const db = new Db(join(config.dataDir, "clnk.db"));
+  const db = openDb ?? new Db(join(config.dataDir, "clnk.db"));
   const auth = new AuthService(db);
   let server: Server<SocketData> | undefined;
   const sockets = new Set<ServerWebSocket<SocketData>>();

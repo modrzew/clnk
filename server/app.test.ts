@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -34,7 +35,6 @@ import {
   type TranscriptState,
 } from "../shared/transcript";
 import { type App, startApp } from "./app";
-import { AuthService } from "./auth";
 import { Db } from "./db";
 import type { McpHost, PiHost } from "./pi";
 
@@ -44,6 +44,17 @@ const cleanup: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
+
+/** A database in memory that stays open when the app stops, so that a test can restart the server on it. */
+class KeptDb extends Db {
+  constructor() {
+    super(":memory:");
+  }
+  override close() {}
+  end() {
+    super.close();
+  }
+}
 
 async function createHost(
   dir: string,
@@ -77,7 +88,10 @@ async function createHost(
 
 async function setup(
   options: {
-    dataDir?: string;
+    /** Starts the server again on the data dir and database of one that has stopped. */
+    restartOf?: { dataDir: string; db?: Db };
+    /** Keeps the database on disk, to test that it survives a restart. */
+    onDisk?: boolean;
     tokensPerSecond?: number;
     /** Connects MCP servers. */
     mcp?: McpHost;
@@ -85,15 +99,33 @@ async function setup(
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), "clnk-test-"));
-  const dataDir = options.dataDir ?? join(dir, "data");
+  const dataDir = options.restartOf?.dataDir ?? join(dir, "data");
   const { host, faux } = await createHost(dir, options.tokensPerSecond);
   host.mcp = options.mcp ?? null;
+  // Committing to a database on disk syncs it, which takes ~10ms a time on some filesystems.
+  const db = options.restartOf
+    ? options.restartOf.db
+    : options.onDisk
+      ? undefined
+      : new KeptDb();
+  if (db instanceof KeptDb && !options.restartOf) cleanup.push(() => db.end());
+  const createUser = (name: string) => {
+    if (db) return addUser(db, name);
+    mkdirSync(dataDir, { recursive: true });
+    const onDiskDb = new Db(join(dataDir, "clnk.db"));
+    try {
+      addUser(onDiskDb, name);
+    } finally {
+      onDiskDb.close();
+    }
+  };
   // A restarted server has the account already.
-  if (!options.dataDir) await addUser(dataDir, "alice");
+  if (!options.restartOf) createUser("alice");
   const app = startApp({
     config: { host: "127.0.0.1", port: 0, dataDir, webDir: null },
     pi: host,
     idleTimeoutMs: options.idleTimeoutMs ?? 50,
+    db,
   });
   let stopped = false;
   const stop = async () => {
@@ -107,6 +139,7 @@ async function setup(
     app,
     faux,
     dataDir,
+    db,
     agentDir: host.agentDir,
     stop,
     token,
@@ -116,8 +149,9 @@ async function setup(
     /** Fetches a file the way links do, with the token in the URL. */
     download: (path: string) => fetch(withToken(new URL(path, app.url), token)),
     /** Adds another account, logged in. */
+    createUser,
     otherUser: async (name: string) => {
-      await addUser(dataDir, name);
+      createUser(name);
       const other = await login(app, name);
       return {
         api: (path: string, init?: RequestInit) =>
@@ -128,15 +162,24 @@ async function setup(
   };
 }
 
-/** Creates an account, like `bun users add`. */
-async function addUser(dataDir: string, name: string, password = "secret") {
-  mkdirSync(dataDir, { recursive: true });
-  const db = new Db(join(dataDir, "clnk.db"));
-  try {
-    return await new AuthService(db).createUser(name, password);
-  } finally {
-    db.close();
-  }
+/**
+ * The hash of "secret" at the lowest argon2 cost. Hashing at Bun's default cost takes ~100ms, and
+ * verifying it again on every login, which adds up when every test creates an account.
+ */
+const PASSWORD_HASH = await Bun.password.hash("secret", {
+  algorithm: "argon2id",
+  memoryCost: 8,
+  timeCost: 1,
+});
+
+/** Creates an account with the password "secret". */
+function addUser(db: Db, name: string) {
+  db.insertUser({
+    id: randomUUID(),
+    name,
+    passwordHash: PASSWORD_HASH,
+    createdAt: Date.now(),
+  });
 }
 
 async function login(app: App, name: string, password = "secret") {
@@ -513,8 +556,9 @@ async function createProject(
   return body.project.id as string;
 }
 
+/** Takes ~100ms to stream at 400 tokens a second, long enough for a test to act while it runs. */
 const SLOW_REPLY = "A reply that takes a little while to stream out. ".repeat(
-  6,
+  3,
 );
 
 describe("backend", () => {
@@ -603,7 +647,7 @@ describe("backend", () => {
     const { connect, faux, api } = await setup({ tokensPerSecond: 400 });
     const text =
       "This answer streams slowly so a second client can join half way through. ".repeat(
-        6,
+        2,
       );
     faux.setResponses([
       fauxAssistantMessage([
@@ -621,7 +665,7 @@ describe("backend", () => {
     early.send({ type: "subscribe", chatId });
     await early.waitFor(
       () =>
-        early.received.filter((msg) => msg.type === "stream_delta").length > 5,
+        early.received.filter((msg) => msg.type === "stream_delta").length > 3,
     );
 
     const late = await connect();
@@ -676,7 +720,7 @@ describe("backend", () => {
   });
 
   test("stops a run and hands back the steering messages Pi hadn't read", async () => {
-    const { connect, faux, api } = await setup({ tokensPerSecond: 200 });
+    const { connect, faux, api } = await setup({ tokensPerSecond: 400 });
     faux.setResponses([fauxAssistantMessage(SLOW_REPLY)]);
     const client = await connect();
     const { body } = await api(
@@ -701,7 +745,7 @@ describe("backend", () => {
   });
 
   test("tells clients when Pi is done with a chat, unless the run was stopped", async () => {
-    const setupResult = await setup({ tokensPerSecond: 200 });
+    const setupResult = await setup({ tokensPerSecond: 400 });
     const { faux, api } = setupResult;
     faux.setResponses([
       fauxAssistantMessage(
@@ -817,7 +861,7 @@ describe("backend", () => {
 
   test("editing or retrying a message replaces it and everything after it", async () => {
     const setupResult = await setup();
-    const { faux, api, stop, dataDir } = setupResult;
+    const { faux, api, stop } = setupResult;
     faux.setResponses([fauxAssistantMessage("One.")]);
     const { client, chatId } = await startChat(setupResult, "First");
     faux.setResponses([fauxAssistantMessage("Two.")]);
@@ -886,7 +930,7 @@ describe("backend", () => {
 
     // The session file continues from the edited branch.
     await stop();
-    const restarted = await setup({ dataDir });
+    const restarted = await setup({ restartOf: setupResult });
     const reconnected = await restarted.connect();
     reconnected.send({ type: "subscribe", chatId });
     await reconnected.waitFor(() => reconnected.transcript(chatId).loaded);
@@ -897,29 +941,36 @@ describe("backend", () => {
   });
 
   test("streams a tool's output while it runs", async () => {
-    const setupResult = await setup();
-    const { faux } = setupResult;
+    const { faux, connect, api, dataDir, userId } = await setup();
     faux.setResponses([
       fauxAssistantMessage(
         fauxToolCall("bash", {
-          command: "for i in 1 2 3; do echo line$i; sleep 0.25; done",
+          // Waits for the test to see the first line.
+          command:
+            "echo line1; until [ -e go ]; do sleep 0.01; done; echo line2",
         }),
         { stopReason: "toolUse" },
       ),
       fauxAssistantMessage("Done."),
     ]);
-    const { client, chatId } = await startChat(setupResult, "Count");
+    const client = await connect();
+    const { body } = await api(
+      "/api/chats",
+      post({ model: MODEL, message: "Count" }),
+    );
+    const chatId = body.chat.id as string;
+    client.send({ type: "subscribe", chatId });
+    await client.waitFor(() =>
+      Object.values(client.transcript(chatId).toolOutput).includes("line1\n"),
+    );
+
+    writeFileSync(join(dataDir, "workspaces", userId, chatId, "go"), "");
     await client.waitFor(() => client.transcript(chatId).messages.length === 4);
-    const outputs = client.received.filter((msg) => msg.type === "tool_output");
-    expect(outputs.length).toBeGreaterThan(1);
-    expect(
-      outputs.some((msg) => msg.append && msg.text.includes("line1")),
-    ).toBe(true);
     const transcript = client.transcript(chatId);
     expect(transcript.toolOutput).toEqual({});
     expect(transcript.messages[2]).toMatchObject({
       role: "toolResult",
-      content: [{ type: "text", text: "line1\nline2\nline3\n" }],
+      content: [{ type: "text", text: "line1\nline2\n" }],
     });
   });
 
@@ -969,7 +1020,7 @@ describe("backend", () => {
   });
 
   test("chats survive a restart and pruned chat folders are recreated", async () => {
-    const first = await setup();
+    const first = await setup({ onDisk: true });
     first.faux.setResponses([fauxAssistantMessage("Hello!")]);
     const client = await first.connect();
     const { body } = await first.api(
@@ -983,7 +1034,7 @@ describe("backend", () => {
     const workspaces = join(first.dataDir, "workspaces");
     rmSync(workspaces, { recursive: true, force: true });
 
-    const second = await setup({ dataDir: first.dataDir });
+    const second = await setup({ restartOf: first });
     const chats = (await second.api("/api/chats")).body.chats as ChatSummary[];
     expect(chats).toEqual([
       expect.objectContaining({ id: chatId, title: "Hi", status: "idle" }),
@@ -1132,7 +1183,7 @@ describe("backend", () => {
   });
 
   test("files sent while Pi is running are shown by name until it reads them", async () => {
-    const { faux, api, connect } = await setup({ tokensPerSecond: 200 });
+    const { faux, api, connect } = await setup({ tokensPerSecond: 400 });
     faux.setResponses([fauxAssistantMessage(SLOW_REPLY)]);
     const client = await connect();
     const { body } = await api(
@@ -1611,7 +1662,7 @@ describe("accounts", () => {
     );
     const image = `/api/chats/${chatId}/images/a.png`;
 
-    await addUser(alice.dataDir, "bob");
+    alice.createUser("bob");
     const { token } = await login(alice.app, "bob");
     const bob = (path: string, init?: RequestInit) =>
       request(alice.app, path, init, token);
