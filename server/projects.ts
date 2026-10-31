@@ -16,7 +16,7 @@ import {
   utimesSync,
 } from "node:fs";
 import { copyFile } from "node:fs/promises";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import type {
   ArtefactInfo,
   ProjectSummary,
@@ -24,6 +24,7 @@ import type {
 } from "../shared/protocol";
 import { HttpError, type Publish, userTopic } from "./chats";
 import type { Db, ProjectRow } from "./db";
+import { isFile, isInside } from "./files";
 import { ARTEFACTS_LINK } from "./pi";
 
 const NAME_LENGTH = 120;
@@ -355,24 +356,6 @@ function artefactName(name: string): string {
   )
     throw new HttpError(400, `"${name}" can't be used as a file name`);
   return trimmed;
-}
-
-function isFile(path: string): boolean {
-  try {
-    return lstatSync(path).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function isInside(dir: string, path: string): boolean {
-  const rel = relative(dir, path);
-  return (
-    rel !== "" &&
-    rel !== ".." &&
-    !rel.startsWith(`..${sep}`) &&
-    !isAbsolute(rel)
-  );
 }
 
 function compareNames(a: string, b: string) {

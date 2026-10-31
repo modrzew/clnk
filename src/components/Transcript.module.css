@@ -20,6 +20,19 @@
   gap: 10px;
 }
 
+.userContent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+  max-width: 85%;
+}
+
+.userContent .bubble {
+  max-width: 100%;
+}
+
 .msgUser.queued {
   flex-direction: column;
   align-items: flex-end;
@@ -70,6 +83,22 @@
   resize: none;
   background: none;
   line-height: 1.5;
+}
+
+.editAttachments {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.editAttachments span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editActions {
@@ -171,6 +200,7 @@
   }
 
   .bubble,
+  .userContent,
   .editBox {
     max-width: 92%;
   }

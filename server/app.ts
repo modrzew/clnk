@@ -2,23 +2,24 @@ import { mkdirSync } from "node:fs";
 import { join, normalize, sep } from "node:path";
 import type { Server, ServerWebSocket } from "bun";
 import packageJson from "../package.json";
-import type {
-  AbortResponse,
-  ChatsResponse,
-  ClientMessage,
-  CreateChatResponse,
-  CreateProjectResponse,
-  ErrorResponse,
-  HealthResponse,
-  ModelRef,
-  ProjectsResponse,
-  RewindRequest,
-  ServerMessage,
-  UpdateChatRequest,
-  UpdateChatResponse,
-  UpdateProjectRequest,
-  UpdateProjectResponse,
-  UploadArtefactResponse,
+import {
+  type AbortResponse,
+  type ChatsResponse,
+  type ClientMessage,
+  type CreateChatResponse,
+  type CreateProjectResponse,
+  type ErrorResponse,
+  type HealthResponse,
+  MAX_REQUEST_BYTES,
+  type ModelRef,
+  type ProjectsResponse,
+  type RewindRequest,
+  type ServerMessage,
+  type UpdateChatRequest,
+  type UpdateChatResponse,
+  type UpdateProjectRequest,
+  type UpdateProjectResponse,
+  type UploadArtefactResponse,
 } from "../shared/protocol";
 import {
   ChatService,
@@ -102,16 +103,29 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
     if (path === "/api/chats" && method === "GET")
       return json({ chats: chats.listChats(userId) } satisfies ChatsResponse);
     if (path === "/api/chats" && method === "POST") {
-      const body = await readJson(req);
+      const { body, files } = await readRequest(req);
       const chat = await chats.createChat(
         userId,
         parseModel(body.model),
-        parseMessage(body.message),
+        parseString(body.message, "message"),
         body.projectId === undefined
           ? undefined
           : parseString(body.projectId, "projectId"),
+        files,
       );
       return json({ chat } satisfies CreateChatResponse, 201);
+    }
+    const attachmentMatch = path.match(
+      /^\/api\/chats\/([^/]+)\/attachments\/([^/]+)$/,
+    );
+    if (attachmentMatch && method === "GET") {
+      const name = decodeSegment(attachmentMatch[2]);
+      const file = Bun.file(
+        chats.attachmentPath(userId, decodeSegment(attachmentMatch[1]), name),
+      );
+      return new Response(file, {
+        headers: { "Content-Disposition": attachment(name) },
+      });
     }
     const chatMatch = path.match(/^\/api\/chats\/([^/]+)(\/[a-z]+)?$/);
     if (chatMatch) {
@@ -126,8 +140,13 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
         return json({ chat } satisfies UpdateChatResponse);
       }
       if (route === "POST /messages") {
-        const body = await readJson(req);
-        await chats.sendMessage(userId, chatId, parseMessage(body.message));
+        const { body, files } = await readRequest(req);
+        await chats.sendMessage(
+          userId,
+          chatId,
+          parseString(body.message, "message"),
+          files,
+        );
         return json({ ok: true }, 202);
       }
       if (route === "POST /abort") {
@@ -198,6 +217,7 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
   server = Bun.serve<SocketData>({
     hostname: config.host,
     port: config.port,
+    maxRequestBodySize: MAX_REQUEST_BYTES,
     async fetch(req, srv) {
       const url = new URL(req.url);
       if (!url.pathname.startsWith("/api/"))
@@ -268,9 +288,30 @@ function json(body: unknown, status = 200): Response {
 }
 
 async function readJson(req: Request): Promise<Record<string, unknown>> {
+  return jsonObject(await req.text().catch(() => ""));
+}
+
+/** A JSON body, or a multipart one with files: the JSON in a `request` field, the files in `files`. */
+async function readRequest(
+  req: Request,
+): Promise<{ body: Record<string, unknown>; files: File[] }> {
+  if (!req.headers.get("Content-Type")?.startsWith("multipart/form-data"))
+    return { body: await readJson(req), files: [] };
+  const form = await req.formData().catch(() => null);
+  if (!form) throw new HttpError(400, "Malformed form data");
+  const request = form.get("request");
+  const files = form.getAll("files");
+  if (typeof request !== "string")
+    throw new HttpError(400, "Expected the JSON request in a request field");
+  if (files.some((file) => typeof file === "string"))
+    throw new HttpError(400, "files must be files");
+  return { body: jsonObject(request), files: files as File[] };
+}
+
+function jsonObject(text: string): Record<string, unknown> {
   try {
-    const body = await req.json();
-    if (body && typeof body === "object")
+    const body: unknown = JSON.parse(text);
+    if (body && typeof body === "object" && !Array.isArray(body))
       return body as Record<string, unknown>;
   } catch {}
   throw new HttpError(400, "Expected a JSON object body");
@@ -287,12 +328,6 @@ function decodeSegment(segment: string): string {
 function parseString(value: unknown, field: string): string {
   if (typeof value !== "string")
     throw new HttpError(400, `${field} must be a string`);
-  return value;
-}
-
-function parseMessage(value: unknown): string {
-  if (typeof value !== "string" || !value.trim())
-    throw new HttpError(400, "message must be a non-empty string");
   return value;
 }
 
@@ -336,7 +371,9 @@ function parseRewind(body: Record<string, unknown>): RewindRequest {
   return {
     timestamp: body.timestamp,
     message:
-      body.message === undefined ? undefined : parseMessage(body.message),
+      body.message === undefined
+        ? undefined
+        : parseString(body.message, "message"),
   };
 }
 

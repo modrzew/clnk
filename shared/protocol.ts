@@ -32,8 +32,24 @@ export type AssistantContent = TextContent | ThinkingContent | ToolCall;
 
 export interface UserMessage {
   role: "user";
+  /** Images the user attached are included here, after the text. */
   content: string | (TextContent | ImageContent)[];
   timestamp: number;
+  /**
+   * Files the user attached. clnk adds them to the text Pi gets, and the server takes them out again,
+   * so `content` only has what the user wrote.
+   */
+  attachments?: Attachment[];
+}
+
+/** A file attached to a user message. Pi finds it in its chat folder under `attachments/`. */
+export interface Attachment {
+  /** File name, unique within the chat. */
+  name: string;
+  mimeType: string;
+  size: number;
+  /** Also in the message's content as an image. */
+  inline: boolean;
 }
 
 export interface AssistantMessage {
@@ -98,6 +114,8 @@ export interface ModelRef {
 export interface ModelInfo extends ModelRef {
   name: string;
   reasoning: boolean;
+  /** The model can see images. Others get attached images as files only. */
+  images: boolean;
   contextWindow: number;
 }
 
@@ -164,6 +182,16 @@ export interface ChatsResponse {
   chats: ChatSummary[];
 }
 
+/*
+ * Messages can come with files: POST /api/chats and POST /api/chats/:id/messages also take
+ * multipart/form-data, with the JSON request in a `request` field and each file in a `files` field.
+ * The message can be empty then. Images Pi can read (PNG, JPEG, GIF, WebP) are also sent to the model
+ * as images.
+ */
+
+/** Largest request body the server takes, files included. */
+export const MAX_REQUEST_BYTES = 128 * 1024 ** 2;
+
 /**
  * POST /api/chats: creates the chat and starts a run with the first message. 409 if the project is
  * archived.
@@ -187,7 +215,10 @@ export interface SendMessageRequest {
   message: string;
 }
 
-/** POST /api/chats/:id/abort: stops the run. Steering messages Pi hasn't read yet are dropped and returned. */
+/**
+ * POST /api/chats/:id/abort: stops the run. Steering messages Pi hasn't read yet are dropped and their
+ * text returned. Files attached to them stay in the chat folder, but aren't part of the chat.
+ */
 export interface AbortResponse {
   queued: string[];
 }
@@ -205,8 +236,8 @@ export interface UpdateChatResponse {
 /**
  * POST /api/chats/:id/rewind: edits or retries a user message, identified by its timestamp. The
  * transcript is cut back to just before it, and it's sent again: as `message` if given, otherwise
- * unchanged. 409 while the chat is running or archived (or its project is), or if the message is no
- * longer in the chat.
+ * unchanged. Its attachments are sent again either way. 409 while the chat is running or archived (or
+ * its project is), or if the message is no longer in the chat.
  */
 export interface RewindRequest {
   timestamp: number;
@@ -246,6 +277,9 @@ export interface UpdateProjectResponse {
  *   same name. Responds with UploadArtefactResponse.
  * - DELETE /api/projects/:id/artefacts/:name deletes it.
  * Uploads and deletes are refused with 409 while the project is archived.
+ *
+ * GET /api/chats/:id/attachments/:name downloads a file attached to one of the chat's messages, with the
+ * file name URL-encoded. 404 once the chat folder was pruned.
  */
 export interface UploadArtefactResponse {
   artefact: ArtefactInfo;

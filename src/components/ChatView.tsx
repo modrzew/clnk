@@ -8,6 +8,7 @@ import type {
 import type { BackendClient } from "../lib/client";
 import { cx } from "../lib/cx";
 import { routeHref, useTranscript } from "../lib/hooks";
+import { modelKey } from "../lib/models";
 import styles from "./ChatView.module.css";
 import { Composer } from "./Composer";
 import { ContextMeter } from "./ContextMeter";
@@ -49,6 +50,12 @@ export function ChatView({
       client.rewind(chatId, { timestamp, message }).then(() => {}),
     [client, chatId],
   );
+  const attachmentUrl = useCallback(
+    (name: string) => client.attachmentUrl(chatId, name),
+    [client, chatId],
+  );
+  const model =
+    chat && models.find((m) => modelKey(m) === modelKey(chat.model));
 
   function act(action: () => Promise<unknown>) {
     setActionError(null);
@@ -103,6 +110,7 @@ export function ChatView({
         <Transcript
           transcript={transcript}
           running={running}
+          attachmentUrl={attachmentUrl}
           onRewind={running || archived || projectArchived ? undefined : rewind}
         />
       ) : (
@@ -143,7 +151,10 @@ export function ChatView({
           key={chatId}
           running={running}
           autoFocus
-          onSend={(text) => client.sendMessage(chatId, text).then(() => {})}
+          seesImages={model?.images}
+          onSend={(text, files) =>
+            client.sendMessage(chatId, text, files).then(() => {})
+          }
           onStop={() => client.abort(chatId).then(({ queued }) => queued)}
         >
           {chat &&

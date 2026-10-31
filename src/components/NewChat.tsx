@@ -47,9 +47,12 @@ export function NewChatComposer({
   const available = models.models?.models ?? [];
   const model = picked ?? initialModel(models.models);
 
-  async function start(message: string) {
+  async function start(message: string, files: File[]) {
     if (!model) throw new Error("Pick a model first");
-    const { chat } = await client.createChat({ model, message, projectId });
+    const { chat } = await client.createChat(
+      { model, message, projectId },
+      files,
+    );
     localStorage.setItem(LAST_MODEL_KEY, modelKey(model));
     navigate({ name: "chat", chatId: chat.id });
   }
@@ -71,6 +74,11 @@ export function NewChatComposer({
         blockedReason={model ? undefined : "Pick a model to start"}
         placeholder={placeholder}
         autoFocus
+        seesImages={
+          model
+            ? available.find((m) => modelKey(m) === modelKey(model))?.images
+            : undefined
+        }
         onSend={start}
       >
         {available.length > 0 && (

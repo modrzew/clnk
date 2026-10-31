@@ -78,17 +78,17 @@ export class BackendClient {
     return this.request<ModelsResponse>("/api/models");
   }
 
-  createChat(body: CreateChatRequest) {
+  createChat(body: CreateChatRequest, files: File[] = []) {
     return this.request<CreateChatResponse>("/api/chats", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: withFiles(body, files),
     });
   }
 
-  sendMessage(chatId: string, message: string) {
+  sendMessage(chatId: string, message: string, files: File[] = []) {
     return this.request(`${chatPath(chatId)}/messages`, {
       method: "POST",
-      body: JSON.stringify({ message }),
+      body: withFiles({ message }, files),
     });
   }
 
@@ -147,16 +147,27 @@ export class BackendClient {
     return this.baseUrl + artefactPath(projectId, name);
   }
 
+  /** Downloads a file attached to a message of the chat when opened. */
+  attachmentUrl(chatId: string, name: string) {
+    return `${this.baseUrl}${chatPath(chatId)}/attachments/${encodeURIComponent(name)}`;
+  }
+
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(this.baseUrl + path, {
       ...init,
-      headers: { "Content-Type": "application/json", ...init?.headers },
+      // Form data gets its Content-Type, with the boundary, from fetch.
+      headers:
+        init?.body instanceof FormData
+          ? init.headers
+          : { "Content-Type": "application/json", ...init?.headers },
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok)
       throw new Error(
         (body as ErrorResponse | null)?.error ??
-          `Request failed (${response.status})`,
+          (response.status === 413
+            ? "That's too large to upload"
+            : `Request failed (${response.status})`),
       );
     return body as T;
   }
@@ -217,6 +228,15 @@ const projectPath = (projectId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}`;
 const artefactPath = (projectId: string, name: string) =>
   `${projectPath(projectId)}/artefacts/${encodeURIComponent(name)}`;
+
+/** A JSON request body, or with files, a multipart one with the JSON in its `request` field. */
+function withFiles(body: object, files: File[]): string | FormData {
+  if (!files.length) return JSON.stringify(body);
+  const form = new FormData();
+  form.append("request", JSON.stringify(body));
+  for (const file of files) form.append("files", file, file.name);
+  return form;
+}
 
 function webSocketUrl(baseUrl: string) {
   const url = new URL(`${baseUrl}/api/ws`);

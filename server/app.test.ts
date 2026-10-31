@@ -94,7 +94,11 @@ async function setup(
 async function request(app: App, path: string, init?: RequestInit) {
   const response = await fetch(new URL(path, app.url), {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    // Multipart requests get their Content-Type, with the boundary, from fetch.
+    headers:
+      init?.body instanceof FormData
+        ? init.headers
+        : { "Content-Type": "application/json", ...init?.headers },
   });
   return { status: response.status, body: (await response.json()) as any };
 }
@@ -102,6 +106,19 @@ async function request(app: App, path: string, init?: RequestInit) {
 function post(body: unknown): RequestInit {
   return { method: "POST", body: JSON.stringify(body) };
 }
+
+/** A request with files, as the web UI sends it. */
+function postFiles(body: unknown, files: File[]): RequestInit {
+  const form = new FormData();
+  form.append("request", JSON.stringify(body));
+  for (const file of files) form.append("files", file);
+  return { method: "POST", body: form };
+}
+
+/** A 1x1 PNG. */
+const PNG = Uint8Array.fromBase64(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+);
 
 function put(body: string): RequestInit {
   return {
@@ -767,6 +784,169 @@ describe("backend", () => {
       () => reconnected.transcript(chatId).messages.length === 4,
     );
     expect(existsSync(join(workspaces, "default", chatId))).toBe(true);
+  });
+
+  test("attaches files to messages, and images for the model to see", async () => {
+    const { app, faux, api, dataDir } = await setup();
+    const seen: unknown[] = [];
+    const reply = (text: string) => (context: { messages: unknown[] }) => {
+      seen.push(context.messages.at(-1));
+      return fauxAssistantMessage(text);
+    };
+    faux.setResponses([reply("A dot."), reply("Noted."), reply("A pixel.")]);
+    const client = await TestClient.connect(app);
+    const created = await api(
+      "/api/chats",
+      postFiles({ model: MODEL, message: "What's this?" }, [
+        new File([PNG], "dot.png", { type: "image/png" }),
+        new File(["Buy milk"], "notes.txt", { type: "text/plain" }),
+      ]),
+    );
+    expect(created.status).toBe(201);
+    const chatId = created.body.chat.id as string;
+    expect(created.body.chat.title).toBe("What's this?");
+    client.send({ type: "subscribe", chatId });
+    await waitForReply(client, chatId, "A dot.");
+
+    const dot = {
+      name: "dot.png",
+      mimeType: "image/png",
+      size: PNG.length,
+      inline: true,
+    };
+    const notes = {
+      name: "notes.txt",
+      mimeType: "text/plain;charset=utf-8",
+      size: 8,
+      inline: false,
+    };
+    const image = {
+      type: "image",
+      mimeType: "image/png",
+      data: expect.any(String),
+    };
+    expect(client.transcript(chatId).messages[0]).toMatchObject({
+      role: "user",
+      content: [{ type: "text", text: "What's this?" }, image],
+      attachments: [dot, notes],
+    });
+    // The model gets the image, and the files listed after the text.
+    expect(seen[0]).toMatchObject({
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: expect.stringMatching(
+            /^What's this\?\n\n<attachments>\n.*path="attachments\/dot\.png".*inline="true".*\n.*path="attachments\/notes\.txt"/,
+          ),
+        },
+        image,
+      ],
+    });
+    const folder = join(dataDir, "workspaces", "default", chatId);
+    expect(existsSync(join(folder, "attachments", "dot.png"))).toBe(true);
+
+    const download = await fetch(
+      new URL(`/api/chats/${chatId}/attachments/notes.txt`, app.url),
+    );
+    expect(await download.text()).toBe("Buy milk");
+    expect(download.headers.get("Content-Disposition")).toStartWith(
+      "attachment;",
+    );
+    for (const name of ["missing.txt", "..", "%2E%2E%2Fclnk.db"])
+      expect(
+        (await api(`/api/chats/${chatId}/attachments/${name}`)).status,
+      ).toBe(404);
+
+    // Only a file, with a name that's taken.
+    expect(
+      (
+        await api(
+          `/api/chats/${chatId}/messages`,
+          postFiles({ message: "" }, [new File(["Eggs"], "notes.txt")]),
+        )
+      ).status,
+    ).toBe(202);
+    await waitForReply(client, chatId, "Noted.");
+    expect(client.transcript(chatId).messages[2]).toMatchObject({
+      content: [{ type: "text", text: "" }],
+      attachments: [
+        expect.objectContaining({ name: "notes (1).txt", inline: false }),
+      ],
+    });
+
+    // An edit keeps the attachments, and the title follows the new text.
+    const timestamp = client.transcript(chatId).messages[0].timestamp;
+    expect(
+      (
+        await api(
+          `/api/chats/${chatId}/rewind`,
+          post({ timestamp, message: "And now?" }),
+        )
+      ).status,
+    ).toBe(202);
+    await waitForReply(client, chatId, "A pixel.");
+    expect(client.transcript(chatId).messages).toMatchObject([
+      {
+        role: "user",
+        content: [{ type: "text", text: "And now?" }, image],
+        attachments: [dot, notes],
+      },
+      { role: "assistant" },
+    ]);
+    expect(seen[2]).toMatchObject({ content: [{ type: "text" }, image] });
+    expect(client.chats.get(chatId)?.title).toBe("And now?");
+
+    // Clients that subscribe later get the same transcript from the session file.
+    await Bun.sleep(100);
+    const later = await TestClient.connect(app);
+    later.send({ type: "subscribe", chatId });
+    await later.waitFor(() => later.transcript(chatId).loaded);
+    expect(later.transcript(chatId).messages).toEqual(
+      client.transcript(chatId).messages,
+    );
+  });
+
+  test("files sent while Pi is running are shown by name until it reads them", async () => {
+    const { app, faux, api } = await setup({ tokensPerSecond: 200 });
+    faux.setResponses([fauxAssistantMessage(SLOW_REPLY)]);
+    const client = await TestClient.connect(app);
+    const { body } = await api(
+      "/api/chats",
+      postFiles({ model: MODEL, message: "" }, [new File(["x"], "a.txt")]),
+    );
+    const chatId = body.chat.id as string;
+    expect(body.chat.title).toBe("a.txt");
+    client.send({ type: "subscribe", chatId });
+    await client.waitFor(() => client.transcript(chatId).streaming !== null);
+
+    await api(
+      `/api/chats/${chatId}/messages`,
+      postFiles({ message: "" }, [new File(["y"], "b.txt")]),
+    );
+    await api(
+      `/api/chats/${chatId}/messages`,
+      postFiles({ message: "Also" }, [new File(["z"], "c.txt")]),
+    );
+    await client.waitFor(() => client.transcript(chatId).queued.length === 2);
+    expect(client.transcript(chatId).queued).toEqual(["b.txt", "Also"]);
+    const stopped = await api(`/api/chats/${chatId}/abort`, post({}));
+    expect(stopped.body).toEqual({ queued: ["", "Also"] });
+  });
+
+  test("validates requests with files", async () => {
+    const { api } = await setup();
+    const form = new FormData();
+    form.append("files", new File(["x"], "a.txt"));
+    expect(
+      (await api("/api/chats", { method: "POST", body: form })).status,
+    ).toBe(400);
+    expect(
+      (await api("/api/chats", postFiles({ model: MODEL, message: " " }, [])))
+        .status,
+    ).toBe(400);
+    const models = (await api("/api/models")).body.models;
+    expect(models[0]).toMatchObject({ id: "faux-1", images: true });
   });
 
   test("creates, edits and archives projects", async () => {

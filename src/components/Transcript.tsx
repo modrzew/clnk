@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { LuPaperclip } from "react-icons/lu";
 import type {
   AssistantMessage,
   ChatMessage,
@@ -19,6 +20,7 @@ import type {
 import type { TranscriptState } from "../../shared/transcript";
 import { cx } from "../lib/cx";
 import { useExpandable } from "../lib/prefs";
+import { FileList, ImageList } from "./Attachments";
 import { Markdown } from "./Markdown";
 import { Spinner } from "./Spinner";
 import { ToolCallView } from "./ToolCall";
@@ -28,9 +30,13 @@ import ui from "./ui.module.css";
 /** Edits (with `message`) or retries the user message with the given timestamp. */
 export type Rewind = (timestamp: number, message?: string) => Promise<void>;
 
+/** Where to download a file attached to a message of the chat. */
+export type AttachmentUrl = (name: string) => string;
+
 interface TranscriptProps {
   transcript: TranscriptState;
   running: boolean;
+  attachmentUrl: AttachmentUrl;
   /** Set when messages can be edited and retried. */
   onRewind?: Rewind;
 }
@@ -39,7 +45,12 @@ interface TranscriptProps {
 const STICK_THRESHOLD_PX = 80;
 const NO_OUTPUT: Record<string, string> = {};
 
-export function Transcript({ transcript, running, onRewind }: TranscriptProps) {
+export function Transcript({
+  transcript,
+  running,
+  attachmentUrl,
+  onRewind,
+}: TranscriptProps) {
   const { messages, streaming, toolOutput, queued, activity } = transcript;
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -77,6 +88,7 @@ export function Transcript({ transcript, running, onRewind }: TranscriptProps) {
               hasPendingCalls(message, results) ? toolOutput : NO_OUTPUT
             }
             running={running}
+            attachmentUrl={attachmentUrl}
             onRewind={onRewind}
           />
         ))}
@@ -115,6 +127,7 @@ interface MessageViewProps {
   results: Map<string, ToolResultMessage>;
   toolOutput: Record<string, string>;
   running: boolean;
+  attachmentUrl: AttachmentUrl;
   onRewind?: Rewind;
 }
 
@@ -123,11 +136,18 @@ const MessageView = memo(function MessageView({
   results,
   toolOutput,
   running,
+  attachmentUrl,
   onRewind,
 }: MessageViewProps) {
   switch (message.role) {
     case "user":
-      return <UserMessageView message={message} onRewind={onRewind} />;
+      return (
+        <UserMessageView
+          message={message}
+          attachmentUrl={attachmentUrl}
+          onRewind={onRewind}
+        />
+      );
     case "assistant":
       return (
         <AssistantView
@@ -153,17 +173,26 @@ const MessageView = memo(function MessageView({
 
 function UserMessageView({
   message,
+  attachmentUrl,
   onRewind,
 }: {
   message: UserMessage;
+  attachmentUrl: AttachmentUrl;
   onRewind?: Rewind;
 }) {
   const [editing, setEditing] = useState(false);
-  const text = contentText(message.content);
+  const { content, attachments = [] } = message;
+  const text = typeof content === "string" ? content : textParts(content);
+  const images =
+    typeof content === "string"
+      ? []
+      : content.filter((part): part is ImageContent => part.type === "image");
+  const files = attachments.filter((attachment) => !attachment.inline);
   if (editing)
     return (
       <EditMessage
         initial={text}
+        attachments={attachments.map((attachment) => attachment.name)}
         onCancel={() => setEditing(false)}
         onSave={
           onRewind &&
@@ -176,7 +205,11 @@ function UserMessageView({
     );
   return (
     <div className={styles.msgUser}>
-      <div className={styles.bubble}>{text}</div>
+      <div className={styles.userContent}>
+        {images.length > 0 && <ImageList images={images} />}
+        {files.length > 0 && <FileList files={files} href={attachmentUrl} />}
+        {text.trim() && <div className={styles.bubble}>{text}</div>}
+      </div>
       {onRewind && (
         <div className={styles.msgActions}>
           <button
@@ -194,10 +227,13 @@ function UserMessageView({
 
 function EditMessage({
   initial,
+  attachments,
   onCancel,
   onSave,
 }: {
   initial: string;
+  /** Names of the message's files, which are sent again with it. */
+  attachments: string[];
   onCancel: () => void;
   /** Unset while the message can't be edited, e.g. because Pi started running. */
   onSave?: (text: string) => Promise<void>;
@@ -214,7 +250,10 @@ function EditMessage({
     el.style.height = `${el.scrollHeight}px`;
   }, [text]);
 
-  const canSave = onSave !== undefined && text.trim().length > 0 && !saving;
+  const canSave =
+    onSave !== undefined &&
+    (text.trim().length > 0 || attachments.length > 0) &&
+    !saving;
 
   async function save() {
     if (!canSave) return;
@@ -249,6 +288,12 @@ function EditMessage({
           onChange={(event) => setText(event.target.value)}
           onKeyDown={onKeyDown}
         />
+        {attachments.length > 0 && (
+          <div className={styles.editAttachments}>
+            <LuPaperclip size={13} aria-hidden />
+            <span>{attachments.join(", ")}</span>
+          </div>
+        )}
         {error && <div className={ui.errorText}>{error}</div>}
         <div className={styles.editActions}>
           <span className={styles.editHint}>
@@ -439,4 +484,10 @@ function contentText(content: string | (TextContent | ImageContent)[]): string {
     .map((part) => (part.type === "text" ? part.text : "[image]"))
     .join("\n")
     .trim();
+}
+
+function textParts(content: (TextContent | ImageContent)[]): string {
+  return content
+    .flatMap((part) => (part.type === "text" ? [part.text] : []))
+    .join("\n");
 }

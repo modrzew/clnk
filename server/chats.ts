@@ -6,10 +6,12 @@ import type {
   AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent";
 import type {
+  Attachment,
   ChatMessage,
   ChatStatus,
   ChatSummary,
   ContextUsage,
+  ImageContent,
   ModelRef,
   RewindRequest,
   ServerMessage,
@@ -20,6 +22,15 @@ import {
   emptyTranscript,
   type TranscriptState,
 } from "../shared/transcript";
+import {
+  attachmentPath,
+  queuedText,
+  removeAttachments,
+  saveAttachments,
+  splitUserText,
+  withAttachments,
+  withNote,
+} from "./attachments";
 import type { ChatRow, Db } from "./db";
 import {
   compactionMarker,
@@ -105,8 +116,10 @@ export class ChatService {
     model: ModelRef,
     message: string,
     projectId?: string,
+    files: File[] = [],
   ): Promise<ChatSummary> {
-    if (!message.trim()) throw new HttpError(400, "Message is empty");
+    if (!message.trim() && !files.length)
+      throw new HttpError(400, "Message is empty");
     if (!hasModel(this.options.pi, model))
       throw new HttpError(
         400,
@@ -119,7 +132,7 @@ export class ChatService {
       id: randomUUID(),
       userId,
       projectId: projectId ?? null,
-      title: titleFrom(message),
+      title: titleFrom(message.trim() ? message : files[0].name),
       model,
       sessionFile: null,
       archivedAt: null,
@@ -129,7 +142,7 @@ export class ChatService {
     };
     this.options.db.insertChat(chat);
     try {
-      await this.startRun(chat, message);
+      await this.sendWithFiles(chat, message, files);
     } catch (error) {
       this.unload(chat.id);
       const { sessionFile } = this.getChat(userId, chat.id);
@@ -153,10 +166,11 @@ export class ChatService {
     userId: string,
     chatId: string,
     message: string,
+    files: File[] = [],
   ): Promise<void> {
     const chat = this.getOpenChat(userId, chatId);
     if (this.rewinding.has(chatId)) throw busy();
-    await this.startRun(chat, message);
+    await this.sendWithFiles(chat, message, files);
   }
 
   /** Stops the chat's run. Returns the steering messages Pi hadn't read yet, which are dropped. */
@@ -168,7 +182,7 @@ export class ChatService {
     runtime.finishPending = false;
     const { steering, followUp } = runtime.session.clearQueue();
     await runtime.session.abort();
-    return [...steering, ...followUp];
+    return [...steering, ...followUp].map((text) => splitUserText(text).text);
   }
 
   async updateChat(
@@ -197,17 +211,15 @@ export class ChatService {
     { timestamp, message }: RewindRequest,
   ): Promise<void> {
     const chat = this.getOpenChat(userId, chatId);
-    if (message !== undefined && !message.trim())
-      throw new HttpError(400, "Message is empty");
     if (this.closing) throw new HttpError(503, "Server is shutting down");
     if (this.status(chatId) === "running") throw busy();
 
     this.rewinding.add(chatId);
     this.refreshStatus(chatId);
     try {
-      const text = await this.cutBefore(chat, timestamp, message);
+      const { text, images } = await this.cutBefore(chat, timestamp, message);
       this.rewinding.delete(chatId);
-      await this.startRun(chat, text);
+      await this.startRun(chat, text, images);
     } finally {
       this.rewinding.delete(chatId);
       this.refreshStatus(chatId);
@@ -230,6 +242,16 @@ export class ChatService {
     return this.snapshotOf(chat, { ...emptyTranscript, messages });
   }
 
+  /** Path of a file attached to one of the chat's messages, to download. */
+  attachmentPath(userId: string, chatId: string, name: string): string {
+    const path = attachmentPath(
+      this.workspaceDir(this.getChat(userId, chatId)),
+      name,
+    );
+    if (!path) throw new HttpError(404, "The file is no longer in the chat");
+    return path;
+  }
+
   /** Aborts runs in progress and disposes every Pi session. */
   async shutdown() {
     this.closing = true;
@@ -241,11 +263,32 @@ export class ChatService {
     for (const chatId of [...this.runtimes.keys()]) this.unload(chatId);
   }
 
+  /** Saves the files in the chat folder and sends the message with them. */
+  private async sendWithFiles(chat: ChatRow, message: string, files: File[]) {
+    if (!message.trim() && !files.length)
+      throw new HttpError(400, "Message is empty");
+    if (this.closing) throw new HttpError(503, "Server is shutting down");
+    const cwd = this.workspaceDir(chat);
+    const { attachments, images } = await saveAttachments(cwd, files);
+    try {
+      // Saving takes a while, and an edit may have started in the meantime.
+      if (this.rewinding.has(chat.id)) throw busy();
+      await this.startRun(chat, withAttachments(message, attachments), images);
+    } catch (error) {
+      removeAttachments(cwd, attachments);
+      throw error;
+    }
+  }
+
   /**
    * Sends a message to the chat's session. Resolves once Pi has accepted it, and rejects if Pi refused
    * it (e.g. no API key). Failures after that are published as run errors.
    */
-  private async startRun(chat: ChatRow, message: string) {
+  private async startRun(
+    chat: ChatRow,
+    message: string,
+    images: ImageContent[] = [],
+  ) {
     if (!message.trim()) throw new HttpError(400, "Message is empty");
     if (this.closing) throw new HttpError(503, "Server is shutting down");
     this.addPrompting(chat.id, 1);
@@ -267,6 +310,7 @@ export class ChatService {
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     const run = runtime.session
       .prompt(message, {
+        images: images.length ? images : undefined,
         // Slash commands and prompt templates are out of scope, so send the text to the model as written.
         expandPromptTemplates: false,
         // While a run is in progress, queue the message for it instead of failing.
@@ -295,39 +339,61 @@ export class ChatService {
     return promise;
   }
 
-  /** Moves the session back to just before a user message. Returns the text to send in its place. */
+  /**
+   * Moves the session back to just before a user message. Returns what to send in its place: the
+   * replacement text if given, with the message's attachments.
+   */
   private async cutBefore(
     chat: ChatRow,
     timestamp: number,
     replacement: string | undefined,
-  ): Promise<string> {
+  ): Promise<{ text: string; images: ImageContent[] }> {
     const runtime = await this.getRuntime(chat);
     if (runtime.agentActive || this.prompting.has(chat.id)) throw busy();
     // User messages are told apart by timestamp. A stale client may ask for one that's been cut off.
     const target = runtime.transcript.messages.find(
       (message) => message.role === "user" && message.timestamp === timestamp,
     );
-    const entry = runtime.session.sessionManager
-      .getBranch()
-      .find(
-        (entry) =>
-          entry.type === "message" &&
-          entry.message.role === "user" &&
-          entry.message.timestamp === timestamp,
-      );
+    let entry: { id: string; content: UserContent } | undefined;
+    for (const branchEntry of runtime.session.sessionManager.getBranch()) {
+      if (
+        branchEntry.type === "message" &&
+        branchEntry.message.role === "user" &&
+        branchEntry.message.timestamp === timestamp
+      ) {
+        entry = { id: branchEntry.id, content: branchEntry.message.content };
+        break;
+      }
+    }
     if (target?.role !== "user" || !entry)
       throw new HttpError(409, "The message is no longer in this chat");
 
-    const original = contentText(target.content);
-    const text = replacement ?? original;
-    if (!text.trim()) throw new HttpError(400, "Message is empty");
+    // From the session rather than the transcript, which has the user's text only.
+    const parts =
+      typeof entry.content === "string"
+        ? [{ type: "text" as const, text: entry.content }]
+        : entry.content;
+    const original = splitUserText(
+      parts
+        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .join("\n"),
+    );
+    const images = parts.filter(
+      (part): part is ImageContent => part.type === "image",
+    );
+    const text = replacement ?? original.text;
+    if (!text.trim() && !original.attachments.length)
+      throw new HttpError(400, "Message is empty");
     const { cancelled } = await runtime.session.navigateTree(entry.id);
     if (cancelled) throw new HttpError(409, "A Pi extension cancelled this");
 
     // Retitle when the first message changes, unless the title came from somewhere else.
     const first = runtime.transcript.messages.find((m) => m.role === "user");
-    if (first === target && chat.title === titleFrom(original))
-      this.options.db.setTitle(chat.id, titleFrom(text));
+    if (
+      first === target &&
+      chat.title === titleFor(original.text, original.attachments)
+    )
+      this.options.db.setTitle(chat.id, titleFor(text, original.attachments));
 
     const messages = transcriptFromEntries(
       runtime.session.sessionManager.getBranch(),
@@ -341,7 +407,7 @@ export class ChatService {
       }),
     );
     this.refreshContext(chat.id, runtime);
-    return text;
+    return { text: withNote(text, original.note), images };
   }
 
   private async switchModel(chat: ChatRow, ref: ModelRef) {
@@ -502,7 +568,7 @@ export class ChatService {
         this.emit(chatId, runtime, {
           type: "queue",
           chatId,
-          queued: [...event.steering, ...event.followUp],
+          queued: [...event.steering, ...event.followUp].map(queuedText),
         });
         break;
       case "compaction_start":
@@ -712,21 +778,19 @@ export class ChatService {
 
 const busy = () => new HttpError(409, "Pi is still working on this chat");
 
+type UserContent = Extract<ChatMessage, { role: "user" }>["content"];
+
 function titleFrom(message: string): string {
   return truncate(message.trim().split("\n")[0].trim(), TITLE_LENGTH);
 }
 
-function truncate(text: string, length: number): string {
-  return text.length > length ? `${text.slice(0, length - 1)}…` : text;
+/** A message with attachments only is named after its first file. */
+function titleFor(text: string, attachments: Attachment[]): string {
+  return titleFrom(text.trim() ? text : (attachments[0]?.name ?? ""));
 }
 
-function contentText(
-  content: Extract<ChatMessage, { role: "user" }>["content"],
-) {
-  if (typeof content === "string") return content;
-  return content
-    .flatMap((part) => (part.type === "text" ? [part.text] : []))
-    .join("\n");
+function truncate(text: string, length: number): string {
+  return text.length > length ? `${text.slice(0, length - 1)}…` : text;
 }
 
 export function errorMessage(error: unknown): string {

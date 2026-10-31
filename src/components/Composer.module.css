@@ -8,22 +8,129 @@
 
 .box {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
   gap: 8px;
-  padding: 8px 8px 8px 14px;
+  padding: 8px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--bg-raised);
 }
 
-.box:focus-within {
+.box:focus-within,
+.box.dragging {
   border-color: var(--accent);
+}
+
+.box.dragging {
+  border-style: dashed;
+  background: var(--bg-hover);
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.hint {
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 4px 0;
+  list-style: none;
+}
+
+.file {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 220px;
+  height: 44px;
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.file.image {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+}
+
+.file.image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 9px;
+}
+
+.fileIcon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.fileName {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fileSize {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--bg-raised);
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg-raised);
+}
+
+.attach {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+}
+
+.attach:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .composer textarea {
   flex: 1;
   min-height: 24px;
-  padding: 4px 0;
+  padding: 5px 0;
   border: none;
   outline: none;
   resize: none;
@@ -35,6 +142,9 @@
   width: 34px;
   height: 34px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   border-radius: 50%;
   background: var(--accent);

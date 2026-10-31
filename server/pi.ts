@@ -22,6 +22,7 @@ import type {
   ModelRef,
   ModelsResponse,
 } from "../shared/protocol";
+import { ATTACHMENTS_DIR, toUserMessage } from "./attachments";
 
 export type AgentMessage = Extract<
   AgentSessionEvent,
@@ -54,6 +55,7 @@ export async function listModels(host: PiHost): Promise<ModelsResponse> {
     id: model.id,
     name: model.name,
     reasoning: model.reasoning,
+    images: model.input.includes("image"),
     contextWindow: model.contextWindow,
   }));
   const settings = SettingsManager.create(host.agentDir, host.agentDir, {
@@ -229,6 +231,7 @@ function chatInstructions(cwd: string): string {
     cwd,
     "Do not read, create, modify or delete anything outside of this directory.",
     "The directory is scratch space and can be cleared between sessions. If files from earlier in this conversation are missing, tell the user they were lost instead of assuming they still exist.",
+    `Files the user attaches to a message are saved in ${ATTACHMENTS_DIR}/ in your working directory, and listed in an <attachments> block at the end of the message. Images marked inline="true" are also included in the message itself. Treat the files as the user's, and leave them unchanged unless asked to change them.`,
   ].join("\n");
 }
 
@@ -281,6 +284,7 @@ function entryToMessage(entry: SessionEntry): ChatMessage | null {
 export function toChatMessage(message: AgentMessage): ChatMessage | null {
   switch (message.role) {
     case "user":
+      return toUserMessage(message);
     case "assistant":
     case "toolResult":
       return message;
