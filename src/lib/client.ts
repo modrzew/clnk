@@ -1,27 +1,34 @@
-import type {
-  AbortResponse,
-  ClientMessage,
-  CreateChatRequest,
-  CreateChatResponse,
-  CreateProjectRequest,
-  CreateProjectResponse,
-  ErrorResponse,
-  HealthResponse,
-  ModelsResponse,
-  RewindRequest,
-  ServerMessage,
-  UpdateChatRequest,
-  UpdateChatResponse,
-  UpdateProjectRequest,
-  UpdateProjectResponse,
-  UploadArtefactResponse,
+import {
+  type AbortResponse,
+  type ChangePasswordRequest,
+  type ClientMessage,
+  type CreateChatRequest,
+  type CreateChatResponse,
+  type CreateProjectRequest,
+  type CreateProjectResponse,
+  type ErrorResponse,
+  type HealthResponse,
+  type LoginRequest,
+  type LoginResponse,
+  type ModelsResponse,
+  type RewindRequest,
+  type ServerMessage,
+  UNAUTHORIZED_CLOSE_CODE,
+  type UpdateChatRequest,
+  type UpdateChatResponse,
+  type UpdateProjectRequest,
+  type UpdateProjectResponse,
+  type UploadArtefactResponse,
 } from "../../shared/protocol";
 
 export type ConnectionStatus = "connecting" | "open" | "offline";
 
 const MAX_RETRY_DELAY_MS = 5000;
 
-/** Talks to one backend: REST for commands, a WebSocket for live state. Reconnects on its own. */
+/**
+ * Talks to one backend as one logged-in user: REST for commands, a WebSocket for live state. Reconnects
+ * on its own, until the backend says the session is over.
+ */
 export class BackendClient {
   status: ConnectionStatus = "connecting";
   private ws: WebSocket | null = null;
@@ -33,7 +40,12 @@ export class BackendClient {
   private messageListeners = new Set<(msg: ServerMessage) => void>();
   private statusListeners = new Set<(status: ConnectionStatus) => void>();
 
-  constructor(readonly baseUrl: string) {}
+  constructor(
+    readonly baseUrl: string,
+    private token: string,
+    /** Called when the backend refuses the token: the user logged out elsewhere, or it changed. */
+    private onUnauthorized: () => void,
+  ) {}
 
   connect() {
     this.closed = false;
@@ -105,6 +117,18 @@ export class BackendClient {
     });
   }
 
+  /** Ends the session on the backend. */
+  logout() {
+    return this.request("/api/auth/logout", { method: "POST" });
+  }
+
+  changePassword(body: ChangePasswordRequest) {
+    return this.request("/api/auth/password", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
   rewind(chatId: string, body: RewindRequest) {
     return this.request(`${chatPath(chatId)}/rewind`, {
       method: "POST",
@@ -144,23 +168,34 @@ export class BackendClient {
 
   /** Downloads the artefact when opened. */
   artefactUrl(projectId: string, name: string) {
-    return this.baseUrl + artefactPath(projectId, name);
+    return this.fileUrl(artefactPath(projectId, name));
   }
 
   /** Downloads a file attached to a message of the chat when opened. */
   attachmentUrl(chatId: string, name: string) {
-    return `${this.baseUrl}${chatPath(chatId)}/attachments/${encodeURIComponent(name)}`;
+    return this.fileUrl(
+      `${chatPath(chatId)}/attachments/${encodeURIComponent(name)}`,
+    );
+  }
+
+  /** URL of a GET endpoint for links and images, which can't send the token in a header. */
+  private fileUrl(path: string) {
+    return `${this.baseUrl}${path}?token=${encodeURIComponent(this.token)}`;
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(this.baseUrl + path, {
       ...init,
-      // Form data gets its Content-Type, with the boundary, from fetch.
-      headers:
-        init?.body instanceof FormData
-          ? init.headers
-          : { "Content-Type": "application/json", ...init?.headers },
+      headers: {
+        // Form data gets its Content-Type, with the boundary, from fetch.
+        ...(init?.body instanceof FormData
+          ? {}
+          : { "Content-Type": "application/json" }),
+        Authorization: `Bearer ${this.token}`,
+        ...init?.headers,
+      },
     });
+    if (response.status === 401) this.unauthorized();
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok)
       throw new Error(
@@ -175,7 +210,9 @@ export class BackendClient {
   private open() {
     if (this.closed) return;
     this.setStatus(this.retries === 0 ? "connecting" : "offline");
-    const ws = new WebSocket(webSocketUrl(this.baseUrl));
+    const ws = new WebSocket(
+      `${webSocketUrl(this.baseUrl)}?token=${encodeURIComponent(this.token)}`,
+    );
     this.ws = ws;
     ws.onopen = () => {
       this.retries = 0;
@@ -187,12 +224,19 @@ export class BackendClient {
       const msg = JSON.parse(String(event.data)) as ServerMessage;
       for (const listener of this.messageListeners) listener(msg);
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (this.ws !== ws) return;
       this.ws = null;
+      if (event.code === UNAUTHORIZED_CLOSE_CODE) return this.unauthorized();
       this.setStatus("offline");
       this.scheduleReconnect();
     };
+  }
+
+  private unauthorized() {
+    if (this.closed) return;
+    this.close();
+    this.onUnauthorized();
   }
 
   private scheduleReconnect() {
@@ -252,6 +296,30 @@ export function normalizeBackendUrl(input: string): string {
     : `http://${trimmed}`;
   const url = new URL(withScheme);
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
+/** Logs in, for a token to make a BackendClient with. */
+export async function login(
+  baseUrl: string,
+  body: LoginRequest,
+): Promise<LoginResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error(`Couldn't reach the backend at ${baseUrl}`);
+  }
+  const result: unknown = await response.json().catch(() => null);
+  if (!response.ok)
+    throw new Error(
+      (result as ErrorResponse | null)?.error ??
+        `Logging in failed (${response.status})`,
+    );
+  return result as LoginResponse;
 }
 
 export async function checkBackend(baseUrl: string): Promise<void> {

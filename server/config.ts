@@ -19,7 +19,7 @@ export function loadConfig(
     env.CLNK_WEB_DIR || join(import.meta.dir, "..", "dist"),
   );
   return {
-    // No auth yet and Pi can run commands, so only listen on loopback unless told otherwise.
+    // Pi can run commands, so only listen on loopback unless told otherwise.
     host: env.HOST || "127.0.0.1",
     port: Number(env.PORT || 8787),
     dataDir: resolve(env.DATA_DIR || join(dataHome, "clnk")),

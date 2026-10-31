@@ -1,4 +1,7 @@
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
+import type { UserInfo } from "../../shared/protocol";
+import type { BackendClient } from "../lib/client";
+import { cx } from "../lib/cx";
 import {
   notificationSupport,
   setNotificationsEnabled,
@@ -17,15 +20,22 @@ import ui from "./ui.module.css";
 
 export function Settings({
   open,
+  client,
+  user,
   onClose,
+  onLogOut,
 }: {
   open: boolean;
+  client: BackendClient;
+  user: UserInfo | null;
   onClose: () => void;
+  onLogOut: () => void;
 }) {
   const prefs = useDisplayPrefs();
 
   return (
     <Dialog open={open} onClose={onClose} title="Settings">
+      <AccountSettings client={client} user={user} onLogOut={onLogOut} />
       {notificationSupport !== "unsupported" && <NotificationSettings />}
       <section className={styles.section}>
         <h3 className={styles.heading}>Display</h3>
@@ -57,7 +67,9 @@ export function Settings({
         </div>
       </section>
       <div className={styles.actions}>
-        <span className={styles.settingHint}>Saved on this device.</span>
+        <span className={styles.settingHint}>
+          Notifications and display are saved on this device.
+        </span>
         <button type="button" className={ui.button} onClick={onClose}>
           Done
         </button>
@@ -96,5 +108,139 @@ function NotificationSettings() {
         />
       </label>
     </section>
+  );
+}
+
+function AccountSettings({
+  client,
+  user,
+  onLogOut,
+}: {
+  client: BackendClient;
+  user: UserInfo | null;
+  onLogOut: () => void;
+}) {
+  const [changing, setChanging] = useState(false);
+  const [changed, setChanged] = useState(false);
+
+  return (
+    <section className={styles.section}>
+      <h3 className={styles.heading}>Account</h3>
+      <div className={styles.setting}>
+        <span className={styles.settingText}>
+          <span className={styles.settingLabel}>{user?.name}</span>
+          <span className={styles.settingHint}>
+            {changed
+              ? "Password changed. Your other devices were logged out."
+              : "Logged in on this device"}
+          </span>
+        </span>
+        <span className={styles.accountActions}>
+          {!changing && (
+            <button
+              type="button"
+              className={ui.linkButton}
+              onClick={() => setChanging(true)}
+            >
+              Change password
+            </button>
+          )}
+          <button
+            type="button"
+            className={cx(ui.button, ui.secondary)}
+            onClick={onLogOut}
+          >
+            Log out
+          </button>
+        </span>
+      </div>
+      {changing && (
+        <PasswordForm
+          client={client}
+          onDone={(done) => {
+            setChanging(false);
+            setChanged(done);
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+function PasswordForm({
+  client,
+  onDone,
+}: {
+  client: BackendClient;
+  onDone: (changed: boolean) => void;
+}) {
+  const [current, setCurrent] = useState("");
+  const [password, setPassword] = useState("");
+  const [repeated, setRepeated] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (password !== repeated) return setError("The new passwords don't match");
+    setSaving(true);
+    setError(null);
+    try {
+      await client.changePassword({ current, password });
+      onDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form
+      className={styles.passwordForm}
+      onSubmit={(event) => void submit(event)}
+    >
+      <input
+        type="password"
+        autoComplete="current-password"
+        placeholder="Current password"
+        aria-label="Current password"
+        value={current}
+        autoFocus
+        onChange={(event) => setCurrent(event.target.value)}
+      />
+      <input
+        type="password"
+        autoComplete="new-password"
+        placeholder="New password"
+        aria-label="New password"
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+      />
+      <input
+        type="password"
+        autoComplete="new-password"
+        placeholder="New password again"
+        aria-label="New password again"
+        value={repeated}
+        onChange={(event) => setRepeated(event.target.value)}
+      />
+      {error && <div className={ui.errorText}>{error}</div>}
+      <div className={styles.formActions}>
+        <button
+          type="button"
+          className={cx(ui.button, ui.secondary)}
+          onClick={() => onDone(false)}
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className={ui.button}
+          disabled={saving || !current || !password || !repeated}
+        >
+          Change password
+        </button>
+      </div>
+    </form>
   );
 }

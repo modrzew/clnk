@@ -10,17 +10,21 @@ import {
   type CreateProjectResponse,
   type ErrorResponse,
   type HealthResponse,
+  type LoginResponse,
   MAX_REQUEST_BYTES,
   type ModelRef,
   type ProjectsResponse,
   type RewindRequest,
   type ServerMessage,
+  UNAUTHORIZED_CLOSE_CODE,
   type UpdateChatRequest,
   type UpdateChatResponse,
   type UpdateProjectRequest,
   type UpdateProjectResponse,
   type UploadArtefactResponse,
+  type UserInfo,
 } from "../shared/protocol";
+import { AuthService, type Session } from "./auth";
 import {
   ChatService,
   chatTopic,
@@ -29,12 +33,13 @@ import {
   userTopic,
 } from "./chats";
 import type { Config } from "./config";
-import { DEFAULT_USER_ID, Db } from "./db";
+import { Db, type UserRow } from "./db";
 import { listModels, type PiHost } from "./pi";
 import { ProjectService } from "./projects";
 
 interface SocketData {
-  userId: string;
+  /** Null without a valid token: the socket is closed as soon as it opens. */
+  session: Session | null;
 }
 
 export interface AppOptions {
@@ -49,17 +54,26 @@ export interface App {
   stop(): Promise<void>;
 }
 
-// Clients can be served from anywhere (Vite dev server, desktop app), and there is no auth to protect yet.
+// Clients can be served from anywhere (Vite dev server, desktop app). Tokens go in a header rather than a
+// cookie, which browsers would send along with requests from any page, so any origin can be allowed.
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
   mkdirSync(config.dataDir, { recursive: true });
   const db = new Db(join(config.dataDir, "clnk.db"));
+  const auth = new AuthService(db);
   let server: Server<SocketData> | undefined;
+  const sockets = new Set<ServerWebSocket<SocketData>>();
+  /** Closes the sockets of sessions that ended. */
+  const closeSockets = (ended: (session: Session) => boolean) => {
+    for (const ws of sockets)
+      if (ws.data.session && ended(ws.data.session))
+        ws.close(UNAUTHORIZED_CLOSE_CODE, "Logged out");
+  };
   const publish = (topic: string, message: ServerMessage) =>
     server?.publish(topic, JSON.stringify(message));
   const projects = new ProjectService({
@@ -81,22 +95,57 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
     url: URL,
     srv: Server<SocketData>,
   ): Promise<Response | undefined> {
-    // Until there's a login flow, whoever sends a request is the default user.
-    const userId = DEFAULT_USER_ID;
     const path = url.pathname;
     const method = req.method;
 
     if (method === "OPTIONS") return new Response(null, { status: 204 });
-    if (path === "/api/ws" && method === "GET") {
-      if (srv.upgrade(req, { data: { userId } })) return undefined;
-      throw new HttpError(400, "Expected a WebSocket upgrade");
-    }
     if (path === "/api/health" && method === "GET") {
       return json({
         ok: true,
         name: "clnk",
         version: packageJson.version,
       } satisfies HealthResponse);
+    }
+    if (path === "/api/auth/login" && method === "POST") {
+      const body = await readJson(req);
+      const { token, user } = await auth.login(
+        parseString(body.name, "name"),
+        parseString(body.password, "password"),
+      );
+      return json({ token, user: userInfo(user) } satisfies LoginResponse);
+    }
+
+    // Links, images and WebSockets can't send headers. GETs don't change anything, so they can take
+    // the token in the URL.
+    const token =
+      bearerToken(req) ??
+      (method === "GET" ? url.searchParams.get("token") : null);
+    const session = token ? auth.authenticate(token) : null;
+    if (path === "/api/ws" && method === "GET") {
+      // Upgraded without a session too, to be closed with a code that tells the client why. Browsers
+      // don't show why an upgrade failed.
+      if (srv.upgrade(req, { data: { session } })) return undefined;
+      throw new HttpError(400, "Expected a WebSocket upgrade");
+    }
+    if (!session) throw new HttpError(401, "Log in first");
+    const userId = session.user.id;
+
+    if (path === "/api/auth/logout" && method === "POST") {
+      auth.logout(session);
+      closeSockets((s) => s.tokenHash === session.tokenHash);
+      return json({ ok: true });
+    }
+    if (path === "/api/auth/password" && method === "POST") {
+      const body = await readJson(req);
+      await auth.changePassword(
+        session,
+        parseString(body.current, "current"),
+        parseString(body.password, "password"),
+      );
+      closeSockets(
+        (s) => s.user.id === userId && s.tokenHash !== session.tokenHash,
+      );
+      return json({ ok: true });
     }
     if (path === "/api/models" && method === "GET")
       return json(await listModels(pi));
@@ -240,14 +289,21 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
     },
     websocket: {
       open(ws) {
-        send(ws, {
-          type: "projects",
-          projects: projects.listProjects(ws.data.userId),
-        });
-        send(ws, { type: "chats", chats: chats.listChats(ws.data.userId) });
-        ws.subscribe(userTopic(ws.data.userId));
+        const { session } = ws.data;
+        if (!session) return ws.close(UNAUTHORIZED_CLOSE_CODE, "Log in first");
+        sockets.add(ws);
+        const userId = session.user.id;
+        send(ws, { type: "user", user: userInfo(session.user) });
+        send(ws, { type: "projects", projects: projects.listProjects(userId) });
+        send(ws, { type: "chats", chats: chats.listChats(userId) });
+        ws.subscribe(userTopic(userId));
+      },
+      close(ws) {
+        sockets.delete(ws);
       },
       message(ws, raw) {
+        const { session } = ws.data;
+        if (!session) return;
         let msg: ClientMessage;
         try {
           msg = JSON.parse(String(raw)) as ClientMessage;
@@ -255,7 +311,7 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
           return send(ws, { type: "error", error: "Invalid JSON" });
         }
         if (msg.type === "subscribe") {
-          const snapshot = chats.snapshot(ws.data.userId, msg.chatId);
+          const snapshot = chats.snapshot(session.user.id, msg.chatId);
           if (!snapshot)
             return send(ws, { type: "error", error: "Chat not found" });
           // Snapshot first, then live events: both happen in this tick, so nothing falls in between.
@@ -281,6 +337,16 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
 
 function send(ws: ServerWebSocket<SocketData>, message: ServerMessage) {
   ws.send(JSON.stringify(message));
+}
+
+function userInfo(user: UserRow): UserInfo {
+  return { id: user.id, name: user.name };
+}
+
+function bearerToken(req: Request): string | null {
+  return (
+    req.headers.get("Authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1] ?? null
+  );
 }
 
 function json(body: unknown, status = 200): Response {

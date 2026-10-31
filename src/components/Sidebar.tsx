@@ -6,7 +6,11 @@ import {
   LuPlus,
   LuSlidersHorizontal,
 } from "react-icons/lu";
-import type { ChatSummary, ProjectSummary } from "../../shared/protocol";
+import type {
+  ChatSummary,
+  ProjectSummary,
+  UserInfo,
+} from "../../shared/protocol";
 import type { ConnectionStatus } from "../lib/client";
 import { cx } from "../lib/cx";
 import { navigate, type Route, routeHref } from "../lib/hooks";
@@ -20,6 +24,7 @@ interface SidebarProps {
   route: Route;
   connection: ConnectionStatus;
   backendUrl: string;
+  user: UserInfo | null;
   open: boolean;
   onClose: () => void;
   onChangeBackend: () => void;
@@ -46,6 +51,7 @@ export function Sidebar({
   route,
   connection,
   backendUrl,
+  user,
   open,
   onClose,
   onChangeBackend,
@@ -256,6 +262,7 @@ export function Sidebar({
             title={CONNECTION_LABEL[connection]}
           />
           <span className={styles.backendUrl} title={backendUrl}>
+            {user && `${user.name} @ `}
             {backendUrl.replace(/^https?:\/\//, "")}
           </span>
           <button

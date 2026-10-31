@@ -149,6 +149,11 @@ export interface ArtefactInfo {
   updatedAt: number;
 }
 
+export interface UserInfo {
+  id: string;
+  name: string;
+}
+
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -163,12 +168,39 @@ export interface ProjectSummary {
 }
 
 // REST: JSON bodies under /api. Failed requests return ErrorResponse with a 4xx/5xx status.
+//
+// Every request but GET /api/health and POST /api/auth/login needs the token from logging in, as
+// `Authorization: Bearer <token>`. GET requests can pass it as `?token=<token>` instead, for links,
+// images and the WebSocket, which can't send headers. Without a valid token they get 401.
 
 /** GET /api/health */
 export interface HealthResponse {
   ok: true;
   name: "clnk";
   version: string;
+}
+
+/** POST /api/auth/login. Accounts are created on the server, with `bun users add <name>`. */
+export interface LoginRequest {
+  name: string;
+  password: string;
+}
+
+/** Logged in until POST /api/auth/logout with the token, or until the password changes. */
+export interface LoginResponse {
+  token: string;
+  user: UserInfo;
+}
+
+/* POST /api/auth/logout ends the session of the token it's sent with, and closes its WebSockets. */
+
+/**
+ * POST /api/auth/password: changes the user's password. Logs out their other sessions, and keeps this
+ * one. 403 if `current` is wrong.
+ */
+export interface ChangePasswordRequest {
+  current: string;
+  password: string;
 }
 
 /** GET /api/models */
@@ -289,14 +321,22 @@ export interface ErrorResponse {
   error: string;
 }
 
-// WebSocket: /api/ws, one JSON message per frame.
+// WebSocket: /api/ws?token=<token>, one JSON message per frame.
+
+/**
+ * The server closes WebSockets with this code when the token isn't valid, or the session ends. Clients
+ * should log in again rather than reconnect.
+ */
+export const UNAUTHORIZED_CLOSE_CODE = 4401;
 
 export type ClientMessage =
   | { type: "subscribe"; chatId: string }
   | { type: "unsubscribe"; chatId: string };
 
 export type ServerMessage =
-  /** First message on every connection: all of the user's projects. */
+  /** First message on every connection: who is logged in. */
+  | { type: "user"; user: UserInfo }
+  /** Sent right after `user` on every connection: all of the user's projects. */
   | { type: "projects"; projects: ProjectSummary[] }
   /** Sent right after `projects` on every connection: all of the user's chats. */
   | { type: "chats"; chats: ChatSummary[] }

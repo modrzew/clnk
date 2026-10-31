@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "server": "bun server/index.ts",
     "server:dev": "bun --watch server/index.ts",
+    "users": "bun server/users.ts",
     "typecheck": "cmk && tsc && tsc -p server && tsc -p tsconfig.node.json --noEmit",
     "lint": "eslint --max-warnings 0 .",
     "test": "bun test",

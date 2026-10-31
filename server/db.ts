@@ -1,8 +1,21 @@
 import { Database } from "bun:sqlite";
 import type { ContextUsage, ModelRef } from "../shared/protocol";
 
-/** Until there is a login flow, every request acts as this user. */
-export const DEFAULT_USER_ID = "default";
+export interface UserRow {
+  id: string;
+  /** What the user logs in with. Unique, ignoring case. */
+  name: string;
+  /** Null for users from before there were passwords, who can't log in. */
+  passwordHash: string | null;
+  createdAt: number;
+}
+
+interface RawUserRow {
+  id: string;
+  name: string;
+  password_hash: string | null;
+  created_at: number;
+}
 
 export interface ChatRow {
   id: string;
@@ -85,6 +98,14 @@ const MIGRATIONS = [
   );
   CREATE INDEX projects_user ON projects (user_id);
   ALTER TABLE chats ADD COLUMN project_id TEXT REFERENCES projects(id);`,
+  `ALTER TABLE users ADD COLUMN password_hash TEXT;
+  CREATE UNIQUE INDEX users_name ON users (name COLLATE NOCASE);
+  CREATE TABLE sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX sessions_user ON sessions (user_id);`,
 ];
 
 export class Db {
@@ -94,11 +115,6 @@ export class Db {
     this.db = new Database(path, { create: true, strict: true });
     this.db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
     this.migrate();
-    this.db
-      .query(
-        "INSERT OR IGNORE INTO users (id, name, created_at) VALUES (?, ?, ?)",
-      )
-      .run(DEFAULT_USER_ID, "Default user", Date.now());
   }
 
   private migrate() {
@@ -111,6 +127,63 @@ export class Db {
         this.db.exec(`PRAGMA user_version = ${version + 1}`);
       })();
     }
+  }
+
+  listUsers(): UserRow[] {
+    const rows = this.db
+      .query("SELECT * FROM users ORDER BY created_at")
+      .all() as RawUserRow[];
+    return rows.map(toUserRow);
+  }
+
+  getUserByName(name: string): UserRow | null {
+    const row = this.db
+      .query("SELECT * FROM users WHERE name = ? COLLATE NOCASE")
+      .get(name) as RawUserRow | null;
+    return row ? toUserRow(row) : null;
+  }
+
+  insertUser(user: UserRow) {
+    this.db
+      .query(
+        "INSERT INTO users (id, name, password_hash, created_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(user.id, user.name, user.passwordHash, user.createdAt);
+  }
+
+  setPasswordHash(userId: string, passwordHash: string) {
+    this.db
+      .query("UPDATE users SET password_hash = ? WHERE id = ?")
+      .run(passwordHash, userId);
+  }
+
+  insertSession(tokenHash: string, userId: string, createdAt = Date.now()) {
+    this.db
+      .query(
+        "INSERT INTO sessions (token_hash, user_id, created_at) VALUES (?, ?, ?)",
+      )
+      .run(tokenHash, userId, createdAt);
+  }
+
+  /** The user a session belongs to, or null if there is no such session. */
+  getSessionUser(tokenHash: string): UserRow | null {
+    const row = this.db
+      .query(
+        "SELECT users.* FROM sessions JOIN users ON users.id = sessions.user_id WHERE token_hash = ?",
+      )
+      .get(tokenHash) as RawUserRow | null;
+    return row ? toUserRow(row) : null;
+  }
+
+  deleteSession(tokenHash: string) {
+    this.db.query("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+  }
+
+  /** Deletes the user's sessions, except the one given. */
+  deleteSessions(userId: string, except: string | null = null) {
+    this.db
+      .query("DELETE FROM sessions WHERE user_id = ? AND token_hash IS NOT ?")
+      .run(userId, except);
   }
 
   listChats(userId: string): ChatRow[] {
@@ -253,6 +326,15 @@ export class Db {
   close() {
     this.db.close();
   }
+}
+
+function toUserRow(row: RawUserRow): UserRow {
+  return {
+    id: row.id,
+    name: row.name,
+    passwordHash: row.password_hash,
+    createdAt: row.created_at,
+  };
 }
 
 function toChatRow(row: RawChatRow): ChatRow {

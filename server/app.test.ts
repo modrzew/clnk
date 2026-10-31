@@ -2,6 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import {
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
@@ -20,6 +21,7 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type {
   ChatSummary,
   ClientMessage,
+  LoginResponse,
   ModelRef,
   ProjectSummary,
   ServerMessage,
@@ -30,6 +32,8 @@ import {
   type TranscriptState,
 } from "../shared/transcript";
 import { type App, startApp } from "./app";
+import { AuthService } from "./auth";
+import { Db } from "./db";
 import type { PiHost } from "./pi";
 
 const MODEL: ModelRef = { provider: "faux", id: "faux-1" };
@@ -70,6 +74,8 @@ async function setup(
   const dir = mkdtempSync(join(tmpdir(), "clnk-test-"));
   const dataDir = options.dataDir ?? join(dir, "data");
   const { host, faux } = await createHost(dir, options.tokensPerSecond);
+  // A restarted server has the account already.
+  if (!options.dataDir) await addUser(dataDir, "alice");
   const app = startApp({
     config: { host: "127.0.0.1", port: 0, dataDir, webDir: null },
     pi: host,
@@ -82,25 +88,65 @@ async function setup(
     await app.stop();
   };
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }), stop);
+  const { token, user } = await login(app, "alice");
   return {
     app,
     faux,
     dataDir,
     stop,
-    api: (path: string, init?: RequestInit) => request(app, path, init),
+    token,
+    userId: user.id,
+    api: (path: string, init?: RequestInit) => request(app, path, init, token),
+    connect: () => TestClient.connect(app, token),
+    /** Fetches a file the way links do, with the token in the URL. */
+    download: (path: string) => fetch(withToken(new URL(path, app.url), token)),
   };
 }
 
-async function request(app: App, path: string, init?: RequestInit) {
+/** Creates an account, like `bun users add`. */
+async function addUser(dataDir: string, name: string, password = "secret") {
+  mkdirSync(dataDir, { recursive: true });
+  const db = new Db(join(dataDir, "clnk.db"));
+  try {
+    return await new AuthService(db).createUser(name, password);
+  } finally {
+    db.close();
+  }
+}
+
+async function login(app: App, name: string, password = "secret") {
+  const { status, body } = await request(
+    app,
+    "/api/auth/login",
+    post({ name, password }),
+  );
+  if (status !== 200) throw new Error(body.error);
+  return body as LoginResponse;
+}
+
+async function request(
+  app: App,
+  path: string,
+  init?: RequestInit,
+  token?: string,
+) {
   const response = await fetch(new URL(path, app.url), {
     ...init,
-    // Multipart requests get their Content-Type, with the boundary, from fetch.
-    headers:
-      init?.body instanceof FormData
-        ? init.headers
-        : { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      // Multipart requests get their Content-Type, with the boundary, from fetch.
+      ...(!(init?.body instanceof FormData) && {
+        "Content-Type": "application/json",
+      }),
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...init?.headers,
+    },
   });
   return { status: response.status, body: (await response.json()) as any };
+}
+
+function withToken(url: URL, token: string): URL {
+  url.searchParams.set("token", token);
+  return url;
 }
 
 function post(body: unknown): RequestInit {
@@ -131,6 +177,7 @@ function put(body: string): RequestInit {
 /** A WebSocket client that keeps a transcript for every chat it subscribes to, like the web UI does. */
 class TestClient {
   received: ServerMessage[] = [];
+  closeCode: number | null = null;
   transcripts = new Map<string, TranscriptState>();
   chats = new Map<string, ChatSummary>();
   projects = new Map<string, ProjectSummary>();
@@ -163,11 +210,16 @@ class TestClient {
         );
       for (const listener of this.listeners) listener();
     };
+    ws.onclose = (event) => {
+      this.closeCode = event.code;
+      for (const listener of this.listeners) listener();
+    };
   }
 
-  static async connect(app: App): Promise<TestClient> {
+  static async connect(app: App, token?: string): Promise<TestClient> {
     const url = new URL("/api/ws", app.url);
     url.protocol = "ws:";
+    if (token) withToken(url, token);
     const ws = new WebSocket(url);
     await new Promise((resolve, reject) => {
       ws.onopen = resolve;
@@ -241,10 +293,10 @@ function userTimestamp(state: TranscriptState, text: string): number {
 
 /** Creates a chat and waits until its first run is done. */
 async function startChat(
-  { app, api }: Awaited<ReturnType<typeof setup>>,
+  { connect, api }: Awaited<ReturnType<typeof setup>>,
   message = "Hi",
 ) {
-  const client = await TestClient.connect(app);
+  const client = await connect();
   const { body } = await api("/api/chats", post({ model: MODEL, message }));
   const chatId = body.chat.id as string;
   client.send({ type: "subscribe", chatId });
@@ -308,7 +360,7 @@ describe("backend", () => {
   });
 
   test("creates a chat and streams the run to subscribers", async () => {
-    const { app, faux, api } = await setup();
+    const { connect, faux, api } = await setup();
     faux.setResponses([
       fauxAssistantMessage(
         [
@@ -322,7 +374,7 @@ describe("backend", () => {
       ),
       fauxAssistantMessage("All done."),
     ]);
-    const client = await TestClient.connect(app);
+    const client = await connect();
 
     const created = await api(
       "/api/chats",
@@ -372,7 +424,7 @@ describe("backend", () => {
   });
 
   test("a client that joins mid-stream catches up with the same transcript", async () => {
-    const { app, faux, api } = await setup({ tokensPerSecond: 400 });
+    const { connect, faux, api } = await setup({ tokensPerSecond: 400 });
     const text =
       "This answer streams slowly so a second client can join half way through. ".repeat(
         6,
@@ -383,7 +435,7 @@ describe("backend", () => {
         fauxText(text),
       ]),
     ]);
-    const early = await TestClient.connect(app);
+    const early = await connect();
 
     const { body } = await api(
       "/api/chats",
@@ -396,7 +448,7 @@ describe("backend", () => {
         early.received.filter((msg) => msg.type === "stream_delta").length > 5,
     );
 
-    const late = await TestClient.connect(app);
+    const late = await connect();
     late.send({ type: "subscribe", chatId });
     await late.waitFor(() => late.transcript(chatId).loaded);
     expect(late.transcript(chatId).streaming).not.toBeNull();
@@ -413,12 +465,12 @@ describe("backend", () => {
   });
 
   test("a message sent while the chat is running steers the run", async () => {
-    const { app, faux, api } = await setup({ tokensPerSecond: 400 });
+    const { connect, faux, api } = await setup({ tokensPerSecond: 400 });
     faux.setResponses([
       fauxAssistantMessage(SLOW_REPLY),
       fauxAssistantMessage("Changed course."),
     ]);
-    const client = await TestClient.connect(app);
+    const client = await connect();
     const { body } = await api(
       "/api/chats",
       post({ model: MODEL, message: "First" }),
@@ -448,9 +500,9 @@ describe("backend", () => {
   });
 
   test("stops a run and hands back the steering messages Pi hadn't read", async () => {
-    const { app, faux, api } = await setup({ tokensPerSecond: 200 });
+    const { connect, faux, api } = await setup({ tokensPerSecond: 200 });
     faux.setResponses([fauxAssistantMessage(SLOW_REPLY)]);
-    const client = await TestClient.connect(app);
+    const client = await connect();
     const { body } = await api(
       "/api/chats",
       post({ model: MODEL, message: "First" }),
@@ -659,7 +711,7 @@ describe("backend", () => {
     // The session file continues from the edited branch.
     await stop();
     const restarted = await setup({ dataDir });
-    const reconnected = await TestClient.connect(restarted.app);
+    const reconnected = await restarted.connect();
     reconnected.send({ type: "subscribe", chatId });
     await reconnected.waitFor(() => reconnected.transcript(chatId).loaded);
     expect(texts(reconnected.transcript(chatId))).toEqual([
@@ -696,8 +748,8 @@ describe("backend", () => {
   });
 
   test("a chat whose first run can't start is deleted again", async () => {
-    const { app, api, dataDir } = await setup();
-    const client = await TestClient.connect(app);
+    const { connect, api, dataDir } = await setup();
+    const client = await connect();
     // A file where the transcripts go makes loading the Pi session fail.
     writeFileSync(join(dataDir, "sessions"), "");
     const logged = spyOn(console, "error").mockImplementation(() => {});
@@ -715,7 +767,7 @@ describe("backend", () => {
   });
 
   test("validates requests", async () => {
-    const { app, api } = await setup();
+    const { connect, api } = await setup();
     expect(
       (
         await api(
@@ -733,7 +785,7 @@ describe("backend", () => {
     ).toBe(404);
     expect((await api("/api/chats")).body.chats).toEqual([]);
 
-    const client = await TestClient.connect(app);
+    const client = await connect();
     client.send({ type: "subscribe", chatId: "missing" });
     await client.waitFor(() =>
       client.received.some((msg) => msg.type === "error"),
@@ -743,7 +795,7 @@ describe("backend", () => {
   test("chats survive a restart and pruned chat folders are recreated", async () => {
     const first = await setup();
     first.faux.setResponses([fauxAssistantMessage("Hello!")]);
-    const client = await TestClient.connect(first.app);
+    const client = await first.connect();
     const { body } = await first.api(
       "/api/chats",
       post({ model: MODEL, message: "Hi" }),
@@ -761,7 +813,7 @@ describe("backend", () => {
       expect.objectContaining({ id: chatId, title: "Hi", status: "idle" }),
     ]);
 
-    const reconnected = await TestClient.connect(second.app);
+    const reconnected = await second.connect();
     await reconnected.waitFor(() => reconnected.chats.has(chatId));
     reconnected.send({ type: "subscribe", chatId });
     await reconnected.waitFor(() => reconnected.transcript(chatId).loaded);
@@ -783,18 +835,18 @@ describe("backend", () => {
     await reconnected.waitFor(
       () => reconnected.transcript(chatId).messages.length === 4,
     );
-    expect(existsSync(join(workspaces, "default", chatId))).toBe(true);
+    expect(existsSync(join(workspaces, first.userId, chatId))).toBe(true);
   });
 
   test("attaches files to messages, and images for the model to see", async () => {
-    const { app, faux, api, dataDir } = await setup();
+    const { faux, api, connect, download, dataDir, userId } = await setup();
     const seen: unknown[] = [];
     const reply = (text: string) => (context: { messages: unknown[] }) => {
       seen.push(context.messages.at(-1));
       return fauxAssistantMessage(text);
     };
     faux.setResponses([reply("A dot."), reply("Noted."), reply("A pixel.")]);
-    const client = await TestClient.connect(app);
+    const client = await connect();
     const created = await api(
       "/api/chats",
       postFiles({ model: MODEL, message: "What's this?" }, [
@@ -843,16 +895,12 @@ describe("backend", () => {
         image,
       ],
     });
-    const folder = join(dataDir, "workspaces", "default", chatId);
+    const folder = join(dataDir, "workspaces", userId, chatId);
     expect(existsSync(join(folder, "attachments", "dot.png"))).toBe(true);
 
-    const download = await fetch(
-      new URL(`/api/chats/${chatId}/attachments/notes.txt`, app.url),
-    );
-    expect(await download.text()).toBe("Buy milk");
-    expect(download.headers.get("Content-Disposition")).toStartWith(
-      "attachment;",
-    );
+    const file = await download(`/api/chats/${chatId}/attachments/notes.txt`);
+    expect(await file.text()).toBe("Buy milk");
+    expect(file.headers.get("Content-Disposition")).toStartWith("attachment;");
     for (const name of ["missing.txt", "..", "%2E%2E%2Fclnk.db"])
       expect(
         (await api(`/api/chats/${chatId}/attachments/${name}`)).status,
@@ -899,7 +947,7 @@ describe("backend", () => {
 
     // Clients that subscribe later get the same transcript from the session file.
     await Bun.sleep(100);
-    const later = await TestClient.connect(app);
+    const later = await connect();
     later.send({ type: "subscribe", chatId });
     await later.waitFor(() => later.transcript(chatId).loaded);
     expect(later.transcript(chatId).messages).toEqual(
@@ -908,9 +956,9 @@ describe("backend", () => {
   });
 
   test("files sent while Pi is running are shown by name until it reads them", async () => {
-    const { app, faux, api } = await setup({ tokensPerSecond: 200 });
+    const { faux, api, connect } = await setup({ tokensPerSecond: 200 });
     faux.setResponses([fauxAssistantMessage(SLOW_REPLY)]);
-    const client = await TestClient.connect(app);
+    const client = await connect();
     const { body } = await api(
       "/api/chats",
       postFiles({ model: MODEL, message: "" }, [new File(["x"], "a.txt")]),
@@ -950,8 +998,8 @@ describe("backend", () => {
   });
 
   test("creates, edits and archives projects", async () => {
-    const { app, api } = await setup();
-    const client = await TestClient.connect(app);
+    const { connect, api } = await setup();
+    const client = await connect();
 
     const created = await api(
       "/api/projects",
@@ -1009,10 +1057,11 @@ describe("backend", () => {
         .status,
     ).toBe(200);
 
-    // Projects come first on a new connection, so chats can be grouped right away.
-    const late = await TestClient.connect(app);
-    await late.waitFor(() => late.received.length >= 2);
-    expect(late.received.map((msg) => msg.type).slice(0, 2)).toEqual([
+    // Projects come before chats on a new connection, so chats can be grouped right away.
+    const late = await connect();
+    await late.waitFor(() => late.received.length >= 3);
+    expect(late.received.map((msg) => msg.type).slice(0, 3)).toEqual([
+      "user",
       "projects",
       "chats",
     ]);
@@ -1023,8 +1072,8 @@ describe("backend", () => {
   });
 
   test("uploads, downloads, replaces and deletes artefacts", async () => {
-    const { app, api } = await setup();
-    const client = await TestClient.connect(app);
+    const { connect, api, download } = await setup();
+    const client = await connect();
     const projectId = await createProject(api, "Docs");
     const name = "Notes (draft) ż.md";
     const path = `/api/projects/${projectId}/artefacts/${encodeURIComponent(name)}`;
@@ -1036,16 +1085,14 @@ describe("backend", () => {
       () => client.projects.get(projectId)?.artefacts.length === 1,
     );
 
-    const download = await fetch(new URL(path, app.url));
-    expect(await download.text()).toBe("# Notes\n");
-    expect(download.headers.get("Content-Disposition")).toBe(
+    const downloaded = await download(path);
+    expect(await downloaded.text()).toBe("# Notes\n");
+    expect(downloaded.headers.get("Content-Disposition")).toBe(
       `attachment; filename="Notes (draft) _.md"; filename*=UTF-8''Notes%20%28draft%29%20%C5%BC.md`,
     );
 
     await api(path, put("# Notes, v2\n"));
-    expect(await (await fetch(new URL(path, app.url))).text()).toBe(
-      "# Notes, v2\n",
-    );
+    expect(await (await download(path)).text()).toBe("# Notes, v2\n");
     expect((await api("/api/projects")).body.projects[0].artefacts).toEqual([
       expect.objectContaining({ name, size: 12 }),
     ]);
@@ -1054,7 +1101,7 @@ describe("backend", () => {
     await client.waitFor(
       () => client.projects.get(projectId)?.artefacts.length === 0,
     );
-    expect((await fetch(new URL(path, app.url))).status).toBe(404);
+    expect((await download(path)).status).toBe(404);
     expect((await api(path, { method: "DELETE" })).status).toBe(404);
 
     // Names that would leave the project's folder.
@@ -1071,8 +1118,8 @@ describe("backend", () => {
   });
 
   test("chats in a project see its instructions and artefacts, and Pi can save new ones", async () => {
-    const { app, faux, api, dataDir } = await setup();
-    const client = await TestClient.connect(app);
+    const { connect, faux, api, dataDir, userId, download } = await setup();
+    const client = await connect();
     const projectId = await createProject(
       api,
       "Pirates",
@@ -1126,7 +1173,7 @@ describe("backend", () => {
     expect(system).toContain("Answer like a pirate.");
     expect(system).toContain("map.txt");
     expect(system).toContain("save_artefact");
-    const link = join(dataDir, "workspaces", "default", chatId, "artefacts");
+    const link = join(dataDir, "workspaces", userId, chatId, "artefacts");
     expect(lstatSync(link).isSymbolicLink()).toBe(true);
 
     const results = client
@@ -1150,8 +1197,8 @@ describe("backend", () => {
         .get(projectId)!
         .artefacts.some((artefact) => artefact.name === "treasure.md"),
     );
-    const saved = await fetch(
-      new URL(`/api/projects/${projectId}/artefacts/treasure.md`, app.url),
+    const saved = await download(
+      `/api/projects/${projectId}/artefacts/treasure.md`,
     );
     expect(await saved.text()).toBe("Gold");
 
@@ -1195,5 +1242,165 @@ describe("backend", () => {
     expect(
       (await api(`/api/chats/${chatId}/rewind`, post({ timestamp }))).status,
     ).toBe(409);
+  });
+});
+
+describe("accounts", () => {
+  test("requests need a valid token", async () => {
+    const { app, api, token } = await setup();
+    const url = (path: string) => new URL(path, app.url);
+
+    expect((await request(app, "/api/health")).status).toBe(200);
+    expect((await request(app, "/api/chats")).status).toBe(401);
+    expect((await request(app, "/api/chats", {}, "nope")).status).toBe(401);
+    expect((await api("/api/chats")).status).toBe(200);
+    expect((await fetch(withToken(url("/api/chats"), token))).status).toBe(200);
+    // Only GETs take the token in the URL.
+    const posted = await fetch(withToken(url("/api/projects"), token), {
+      ...post({ name: "Sneaky" }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(posted.status).toBe(401);
+
+    const anonymous = await TestClient.connect(app);
+    await anonymous.waitFor(() => anonymous.closeCode === 4401);
+    const forged = await TestClient.connect(app, "nope");
+    await forged.waitFor(() => forged.closeCode === 4401);
+    expect([...anonymous.received, ...forged.received]).toEqual([]);
+  });
+
+  test("logs in by name, ignoring case", async () => {
+    const { app, connect, userId } = await setup();
+    const wrong = await request(
+      app,
+      "/api/auth/login",
+      post({ name: "alice", password: "wrong" }),
+    );
+    expect(wrong).toEqual({
+      status: 401,
+      body: { error: "Wrong name or password" },
+    });
+    expect(
+      (
+        await request(
+          app,
+          "/api/auth/login",
+          post({ name: "nobody", password: "secret" }),
+        )
+      ).status,
+    ).toBe(401);
+    expect((await login(app, " ALICE ")).user).toEqual({
+      id: userId,
+      name: "alice",
+    });
+
+    const client = await connect();
+    await client.waitFor(() => client.received.length > 0);
+    expect(client.received[0]).toEqual({
+      type: "user",
+      user: { id: userId, name: "alice" },
+    });
+  });
+
+  test("logging out ends the session and closes its sockets", async () => {
+    const { app, api, connect } = await setup();
+    const other = await login(app, "alice");
+    const client = await connect();
+    const otherClient = await TestClient.connect(app, other.token);
+
+    expect((await api("/api/auth/logout", post({}))).status).toBe(200);
+    await client.waitFor(() => client.closeCode === 4401);
+    expect((await api("/api/chats")).status).toBe(401);
+
+    expect((await request(app, "/api/chats", {}, other.token)).status).toBe(
+      200,
+    );
+    expect(otherClient.closeCode).toBeNull();
+  });
+
+  test("changing the password logs out the user's other sessions", async () => {
+    const { app, api, connect } = await setup();
+    const other = await login(app, "alice");
+    const client = await connect();
+    const otherClient = await TestClient.connect(app, other.token);
+
+    const wrong = await api(
+      "/api/auth/password",
+      post({ current: "wrong", password: "better" }),
+    );
+    expect(wrong.status).toBe(403);
+    const changed = await api(
+      "/api/auth/password",
+      post({ current: "secret", password: "better" }),
+    );
+    expect(changed.status).toBe(200);
+
+    await otherClient.waitFor(() => otherClient.closeCode === 4401);
+    expect((await request(app, "/api/chats", {}, other.token)).status).toBe(
+      401,
+    );
+    expect((await api("/api/chats")).status).toBe(200);
+    expect(client.closeCode).toBeNull();
+    expect(login(app, "alice")).rejects.toThrow();
+    await login(app, "alice", "better");
+  });
+
+  test("users only see their own chats and projects", async () => {
+    const alice = await setup();
+    alice.faux.setResponses([fauxAssistantMessage("Hello!")]);
+    const { chatId } = await startChat(alice);
+    const projectId = await createProject(alice.api, "Secret");
+    const artefact = `/api/projects/${projectId}/artefacts/a.txt`;
+    await alice.api(artefact, put("A"));
+
+    await addUser(alice.dataDir, "bob");
+    const { token } = await login(alice.app, "bob");
+    const bob = (path: string, init?: RequestInit) =>
+      request(alice.app, path, init, token);
+    const bobClient = await TestClient.connect(alice.app, token);
+    await bobClient.waitFor(() =>
+      bobClient.received.some((msg) => msg.type === "chats"),
+    );
+    expect(bobClient.chats.size).toBe(0);
+    expect(bobClient.projects.size).toBe(0);
+
+    expect((await bob("/api/chats")).body.chats).toEqual([]);
+    expect((await bob("/api/projects")).body.projects).toEqual([]);
+    const refused = [
+      await bob(`/api/chats/${chatId}`, patch({ archived: true })),
+      await bob(`/api/chats/${chatId}/messages`, post({ message: "Hi" })),
+      await bob(`/api/chats/${chatId}/abort`, post({})),
+      await bob(`/api/chats/${chatId}/rewind`, post({ timestamp: 1 })),
+      await bob("/api/chats", post({ model: MODEL, message: "Hi", projectId })),
+      await bob(`/api/projects/${projectId}`, patch({ name: "Mine" })),
+      await bob(artefact),
+      await bob(artefact, put("B")),
+      await bob(artefact, { method: "DELETE" }),
+    ];
+    expect(refused.map((response) => response.status)).toEqual(
+      refused.map(() => 404),
+    );
+    expect(await (await alice.download(artefact)).text()).toBe("A");
+
+    bobClient.send({ type: "subscribe", chatId });
+    await bobClient.waitFor(() =>
+      bobClient.received.some((msg) => msg.type === "error"),
+    );
+
+    // Nothing of Alice's reaches Bob's clients.
+    const aliceClient = await alice.connect();
+    alice.faux.setResponses([fauxAssistantMessage("Again!")]);
+    await alice.api(`/api/chats/${chatId}/messages`, post({ message: "Hi" }));
+    await alice.api(`/api/projects/${projectId}`, patch({ name: "Renamed" }));
+    await aliceClient.waitFor(
+      () => aliceClient.projects.get(projectId)?.name === "Renamed",
+    );
+    await aliceClient.waitForStatus(chatId, "idle");
+    expect(bobClient.received.map((msg) => msg.type)).toEqual([
+      "user",
+      "projects",
+      "chats",
+      "error",
+    ]);
   });
 });

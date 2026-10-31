@@ -71,3 +71,35 @@
   justify-content: space-between;
   gap: 12px;
 }
+
+.accountActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.passwordForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.passwordForm input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  outline: none;
+  font-size: 14px;
+}
+
+.passwordForm input:focus {
+  border-color: var(--accent);
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

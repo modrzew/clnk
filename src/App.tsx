@@ -1,11 +1,11 @@
 import { isTauri } from "@tauri-apps/api/core";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChatView } from "./components/ChatView";
 import { NewChat } from "./components/NewChat";
 import { ProjectDialog } from "./components/ProjectDialog";
 import { ProjectView } from "./components/ProjectView";
 import { Settings } from "./components/Settings";
-import { Setup } from "./components/Setup";
+import { Login, Setup } from "./components/Setup";
 import { Sidebar } from "./components/Sidebar";
 import { BackendClient } from "./lib/client";
 import {
@@ -15,11 +15,14 @@ import {
   useModels,
   useProjects,
   useRoute,
+  useUser,
 } from "./lib/hooks";
 import { useChatNotifications } from "./lib/notifications";
 import styles from "./App.module.css";
 
 const BACKEND_URL_KEY = "clnk.backendUrl";
+/** Session token for the backend at BACKEND_URL_KEY. */
+const TOKEN_KEY = "clnk.token";
 
 /**
  * Served over http(s), the page most likely came from the backend itself (or the dev proxy). The apps
@@ -36,6 +39,11 @@ function App() {
     localStorage.getItem(BACKEND_URL_KEY),
   );
   const [changingBackend, setChangingBackend] = useState(false);
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
+  const forgetToken = useCallback(() => {
+    localStorage.removeItem(TOKEN_KEY);
+    setToken(null);
+  }, []);
 
   if (!backendUrl || changingBackend) {
     return (
@@ -43,6 +51,7 @@ function App() {
         initialUrl={backendUrl ?? suggestedBackendUrl()}
         onCancel={backendUrl ? () => setChangingBackend(false) : undefined}
         onConnect={(url) => {
+          if (url !== backendUrl) forgetToken();
           localStorage.setItem(BACKEND_URL_KEY, url);
           setBackendUrl(url);
           setChangingBackend(false);
@@ -50,10 +59,24 @@ function App() {
       />
     );
   }
+  if (!token) {
+    return (
+      <Login
+        backendUrl={backendUrl}
+        onChangeBackend={() => setChangingBackend(true)}
+        onLogin={(token) => {
+          localStorage.setItem(TOKEN_KEY, token);
+          setToken(token);
+        }}
+      />
+    );
+  }
   return (
     <Shell
-      key={backendUrl}
+      key={`${backendUrl} ${token}`}
       backendUrl={backendUrl}
+      token={token}
+      onLoggedOut={forgetToken}
       onChangeBackend={() => setChangingBackend(true)}
     />
   );
@@ -61,18 +84,26 @@ function App() {
 
 function Shell({
   backendUrl,
+  token,
+  onLoggedOut,
   onChangeBackend,
 }: {
   backendUrl: string;
+  token: string;
+  onLoggedOut: () => void;
   onChangeBackend: () => void;
 }) {
-  const client = useMemo(() => new BackendClient(backendUrl), [backendUrl]);
+  const client = useMemo(
+    () => new BackendClient(backendUrl, token, onLoggedOut),
+    [backendUrl, token, onLoggedOut],
+  );
   useEffect(() => {
     client.connect();
     return () => client.close();
   }, [client]);
 
   const connection = useConnectionStatus(client);
+  const user = useUser(client);
   const chats = useChats(client);
   const projects = useProjects(client);
   const models = useModels(client);
@@ -127,6 +158,7 @@ function Shell({
         route={route}
         connection={connection}
         backendUrl={backendUrl}
+        user={user}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onChangeBackend={onChangeBackend}
@@ -145,7 +177,17 @@ function Shell({
             .catch((err: Error) => setError(err.message));
         }}
       />
-      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <Settings
+        open={settingsOpen}
+        client={client}
+        user={user}
+        onClose={() => setSettingsOpen(false)}
+        onLogOut={() => {
+          // Logged out here whether or not the backend can be reached.
+          client.logout().catch(() => {});
+          onLoggedOut();
+        }}
+      />
       {creatingProject && (
         <ProjectDialog
           onClose={() => setCreatingProject(false)}

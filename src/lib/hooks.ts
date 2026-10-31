@@ -4,6 +4,7 @@ import type {
   ModelsResponse,
   ProjectSummary,
   ServerMessage,
+  UserInfo,
 } from "../../shared/protocol";
 import {
   applyServerMessage,
@@ -17,6 +18,19 @@ export function useConnectionStatus(client: BackendClient): ConnectionStatus {
     (onChange) => client.onStatus(onChange),
     () => client.status,
   );
+}
+
+/** Who is logged in. Null until the first connection. */
+export function useUser(client: BackendClient): UserInfo | null {
+  const [user, setUser] = useState<UserInfo | null>(null);
+  useEffect(
+    () =>
+      client.onMessage((msg) => {
+        if (msg.type === "user") setUser(msg.user);
+      }),
+    [client],
+  );
+  return user;
 }
 
 /** All chats of the user, most recently updated first. Null until the first connection. */
