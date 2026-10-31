@@ -87,3 +87,29 @@
   padding: 4px 10px;
   border: 1px solid var(--border);
 }
+
+.image {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-raised);
+  vertical-align: top;
+  cursor: zoom-in;
+}
+
+.image img {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+}
+
+.missingImage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}

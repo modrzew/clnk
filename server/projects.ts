@@ -206,6 +206,12 @@ export class ProjectService {
     return this.changedArtefact(project, fileName);
   }
 
+  /** Where the project's artefacts are, which its chats link to. Null if the project is gone. */
+  artefactsOf(projectId: string): string | null {
+    const project = this.options.db.getProjectById(projectId);
+    return project && this.artefactDir(project);
+  }
+
   /** Points `artefacts` in a chat's folder at the project's artefacts, putting aside whatever is in the way. */
   linkArtefacts(projectId: string, cwd: string) {
     const project = this.options.db.getProjectById(projectId);

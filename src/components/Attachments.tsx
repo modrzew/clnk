@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { LuFile } from "react-icons/lu";
 import type { Attachment, ImageContent } from "../../shared/protocol";
 import { formatSize } from "../lib/format";
@@ -58,14 +59,23 @@ export function FileList({
   );
 }
 
-/** An image over everything else. Closes on a click or Escape. */
-function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+/**
+ * An image over everything else. Closes on a click or Escape. Rendered in the body, so it can be opened
+ * from inside a paragraph.
+ */
+export function Lightbox({
+  src,
+  onClose,
+}: {
+  src: string;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
     if (dialog && !dialog.open) dialog.showModal();
   }, []);
-  return (
+  return createPortal(
     <dialog
       ref={ref}
       className={styles.lightbox}
@@ -74,7 +84,8 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
       onClick={onClose}
     >
       <img src={src} alt="" />
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }
 

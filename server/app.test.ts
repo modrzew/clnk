@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -997,6 +998,83 @@ describe("backend", () => {
     expect(models[0]).toMatchObject({ id: "faux-1", images: true });
   });
 
+  test("serves images in the chat's folder, for replies to embed", async () => {
+    const backend = await setup();
+    const { faux, api, download, dataDir, userId } = backend;
+    let system = "";
+    faux.setResponses([
+      (context) => {
+        system = systemText(context);
+        return fauxAssistantMessage("Hello!");
+      },
+    ]);
+    const { client, chatId } = await startChat(backend);
+    expect(system).toContain("![A chart of the results](chart.png)");
+
+    const folder = join(dataDir, "workspaces", userId, chatId);
+    mkdirSync(join(folder, "plots"));
+    writeFileSync(join(folder, "dot.png"), PNG);
+    writeFileSync(join(folder, "plots", "dot.png"), PNG);
+    writeFileSync(join(folder, "notes.txt"), "Buy milk");
+    writeFileSync(join(folder, "fake.png"), "<html>");
+    writeFileSync(join(dataDir, "outside.png"), PNG);
+    symlinkSync(join(folder, "dot.png"), join(folder, "same.png"));
+    symlinkSync(join(dataDir, "outside.png"), join(folder, "escape.png"));
+    symlinkSync(dataDir, join(folder, "data"));
+
+    const image = (path: string) =>
+      download(`/api/chats/${chatId}/images/${encodeURIComponent(path)}`);
+    for (const path of [
+      "dot.png",
+      "plots/dot.png",
+      "./plots/../same.png",
+      join(folder, "dot.png"),
+    ]) {
+      const response = await image(path);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toBe("image/png");
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(PNG);
+    }
+    for (const path of [
+      "missing.png",
+      "plots",
+      "",
+      "notes.txt",
+      "fake.png",
+      "escape.png",
+      "data/outside.png",
+      "../../../outside.png",
+      join(dataDir, "outside.png"),
+    ])
+      expect((await image(path)).status).toBe(404);
+
+    // Project chats can show the project's artefacts too.
+    const projectId = await createProject(api, "Maps");
+    await api(`/api/projects/${projectId}/artefacts/map.png`, {
+      method: "PUT",
+      body: PNG,
+    });
+    faux.setResponses([fauxAssistantMessage("Ahoy!")]);
+    const created = await api(
+      "/api/chats",
+      post({ model: MODEL, message: "Hi", projectId }),
+    );
+    const projectChat = created.body.chat.id as string;
+    client.send({ type: "subscribe", chatId: projectChat });
+    await client.waitForStatus(projectChat, "idle");
+    const map = await download(
+      `/api/chats/${projectChat}/images/${encodeURIComponent("artefacts/map.png")}`,
+    );
+    expect(map.status).toBe(200);
+    expect(
+      (
+        await download(
+          `/api/chats/${chatId}/images/${encodeURIComponent(join(dataDir, "artefacts", userId, projectId, "map.png"))}`,
+        )
+      ).status,
+    ).toBe(404);
+  });
+
   test("creates, edits and archives projects", async () => {
     const { connect, api } = await setup();
     const client = await connect();
@@ -1352,6 +1430,11 @@ describe("accounts", () => {
     const projectId = await createProject(alice.api, "Secret");
     const artefact = `/api/projects/${projectId}/artefacts/a.txt`;
     await alice.api(artefact, put("A"));
+    writeFileSync(
+      join(alice.dataDir, "workspaces", alice.userId, chatId, "a.png"),
+      PNG,
+    );
+    const image = `/api/chats/${chatId}/images/a.png`;
 
     await addUser(alice.dataDir, "bob");
     const { token } = await login(alice.app, "bob");
@@ -1376,11 +1459,13 @@ describe("accounts", () => {
       await bob(artefact),
       await bob(artefact, put("B")),
       await bob(artefact, { method: "DELETE" }),
+      await bob(image),
     ];
     expect(refused.map((response) => response.status)).toEqual(
       refused.map(() => 404),
     );
     expect(await (await alice.download(artefact)).text()).toBe("A");
+    expect((await alice.download(image)).status).toBe(200);
 
     bobClient.send({ type: "subscribe", chatId });
     await bobClient.waitFor(() =>

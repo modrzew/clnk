@@ -54,6 +54,10 @@ export function ChatView({
     (name: string) => client.attachmentUrl(chatId, name),
     [client, chatId],
   );
+  const imageUrl = useCallback(
+    (path: string) => client.imageUrl(chatId, path),
+    [client, chatId],
+  );
   const model =
     chat && models.find((m) => modelKey(m) === modelKey(chat.model));
 
@@ -111,6 +115,7 @@ export function ChatView({
           transcript={transcript}
           running={running}
           attachmentUrl={attachmentUrl}
+          imageUrl={imageUrl}
           onRewind={running || archived || projectArchived ? undefined : rewind}
         />
       ) : (

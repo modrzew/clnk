@@ -1,6 +1,7 @@
 import {
   type KeyboardEvent,
   memo,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -33,10 +34,14 @@ export type Rewind = (timestamp: number, message?: string) => Promise<void>;
 /** Where to download a file attached to a message of the chat. */
 export type AttachmentUrl = (name: string) => string;
 
+/** Where to load an image in the chat's folder, by the path a reply gives it. */
+export type ImageUrl = (path: string) => string;
+
 interface TranscriptProps {
   transcript: TranscriptState;
   running: boolean;
   attachmentUrl: AttachmentUrl;
+  imageUrl: ImageUrl;
   /** Set when messages can be edited and retried. */
   onRewind?: Rewind;
 }
@@ -49,11 +54,13 @@ export function Transcript({
   transcript,
   running,
   attachmentUrl,
+  imageUrl,
   onRewind,
 }: TranscriptProps) {
   const { messages, streaming, toolOutput, queued, activity } = transcript;
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const lastScrollTop = useRef(0);
   const results = useMemo(() => {
     const map = new Map<string, ToolResultMessage>();
     for (const message of messages)
@@ -66,11 +73,27 @@ export function Transcript({
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [transcript, running]);
 
+  // Images load after they're rendered, and push the end down. `load` doesn't bubble, but can be captured.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onLoad = () => {
+      if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+    };
+    el.addEventListener("load", onLoad, true);
+    return () => el.removeEventListener("load", onLoad, true);
+  }, []);
+
   const onScroll = () => {
     const el = scrollRef.current;
-    if (el)
-      stickToBottom.current =
-        el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;
+    if (!el) return;
+    const atBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;
+    // Leaving the end means scrolling up. When content grows, the browser can scroll down a little to
+    // keep what's in view in place, which doesn't count.
+    if (atBottom || el.scrollTop < lastScrollTop.current)
+      stickToBottom.current = atBottom;
+    lastScrollTop.current = el.scrollTop;
   };
 
   const lastUser = lastUserMessage(messages);
@@ -89,6 +112,7 @@ export function Transcript({
             }
             running={running}
             attachmentUrl={attachmentUrl}
+            imageUrl={imageUrl}
             onRewind={onRewind}
           />
         ))}
@@ -97,6 +121,7 @@ export function Transcript({
             message={streaming}
             results={results}
             toolOutput={toolOutput}
+            imageUrl={imageUrl}
             running
             streaming
           />
@@ -128,6 +153,7 @@ interface MessageViewProps {
   toolOutput: Record<string, string>;
   running: boolean;
   attachmentUrl: AttachmentUrl;
+  imageUrl: ImageUrl;
   onRewind?: Rewind;
 }
 
@@ -137,6 +163,7 @@ const MessageView = memo(function MessageView({
   toolOutput,
   running,
   attachmentUrl,
+  imageUrl,
   onRewind,
 }: MessageViewProps) {
   switch (message.role) {
@@ -154,6 +181,7 @@ const MessageView = memo(function MessageView({
           message={message}
           results={results}
           toolOutput={toolOutput}
+          imageUrl={imageUrl}
           running={running}
         />
       );
@@ -351,6 +379,7 @@ interface AssistantViewProps {
   message: AssistantMessage;
   results: Map<string, ToolResultMessage>;
   toolOutput: Record<string, string>;
+  imageUrl: ImageUrl;
   running: boolean;
   streaming?: boolean;
 }
@@ -359,6 +388,7 @@ function AssistantView({
   message,
   results,
   toolOutput,
+  imageUrl,
   running,
   streaming = false,
 }: AssistantViewProps) {
@@ -369,7 +399,7 @@ function AssistantView({
         switch (block.type) {
           case "text":
             return block.text.trim() ? (
-              <Markdown key={index} text={block.text} />
+              <Markdown key={index} text={block.text} imageUrl={imageUrl} />
             ) : null;
           case "thinking":
             return (

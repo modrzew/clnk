@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type {
   AgentSession,
   AgentSessionEvent,
@@ -32,6 +32,7 @@ import {
   withNote,
 } from "./attachments";
 import type { ChatRow, Db } from "./db";
+import { imageFile } from "./files";
 import {
   compactionMarker,
   hasModel,
@@ -250,6 +251,24 @@ export class ChatService {
     );
     if (!path) throw new HttpError(404, "The file is no longer in the chat");
     return path;
+  }
+
+  /** An image in the chat's folder, for clients to show where Pi's replies embed it. `path` is as Pi wrote it. */
+  async imageFile(
+    userId: string,
+    chatId: string,
+    path: string,
+  ): Promise<{ path: string; type: string }> {
+    const chat = this.getChat(userId, chatId);
+    const cwd = this.workspaceDir(chat);
+    const dirs = [cwd];
+    // Project chats have the project's artefacts linked into their folder.
+    const artefacts =
+      chat.projectId && this.options.projects.artefactsOf(chat.projectId);
+    if (artefacts) dirs.push(artefacts);
+    const image = await imageFile(resolve(cwd, path), dirs);
+    if (!image) throw new HttpError(404, "There is no such image in the chat");
+    return image;
   }
 
   /** Aborts runs in progress and disposes every Pi session. */

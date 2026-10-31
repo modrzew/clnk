@@ -176,6 +176,22 @@ export function startApp({ config, pi, idleTimeoutMs }: AppOptions): App {
         headers: { "Content-Disposition": attachment(name) },
       });
     }
+    // The path is one segment, slashes and all, so `..` in it isn't resolved before the server checks it.
+    const imageMatch = path.match(/^\/api\/chats\/([^/]+)\/images\/([^/]+)$/);
+    if (imageMatch && method === "GET") {
+      const image = await chats.imageFile(
+        userId,
+        decodeSegment(imageMatch[1]),
+        decodeSegment(imageMatch[2]),
+      );
+      return new Response(Bun.file(image.path), {
+        headers: {
+          "Content-Type": image.type,
+          // Pi may draw the image again under the same name.
+          "Cache-Control": "private, no-cache",
+        },
+      });
+    }
     const chatMatch = path.match(/^\/api\/chats\/([^/]+)(\/[a-z]+)?$/);
     if (chatMatch) {
       const chatId = decodeSegment(chatMatch[1]);

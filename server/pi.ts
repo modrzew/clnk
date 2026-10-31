@@ -232,6 +232,7 @@ function chatInstructions(cwd: string): string {
     "Do not read, create, modify or delete anything outside of this directory.",
     "The directory is scratch space and can be cleared between sessions. If files from earlier in this conversation are missing, tell the user they were lost instead of assuming they still exist.",
     `Files the user attaches to a message are saved in ${ATTACHMENTS_DIR}/ in your working directory, and listed in an <attachments> block at the end of the message. Images marked inline="true" are also included in the message itself. Treat the files as the user's, and leave them unchanged unless asked to change them.`,
+    "To show the user an image file (PNG, JPEG, GIF or WebP) from your working directory, embed it in your reply with Markdown, e.g. ![A chart of the results](chart.png), with the path relative to your working directory. The user sees the image where you put it. You don't need to read an image to show it.",
   ].join("\n");
 }
 

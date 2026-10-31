@@ -178,6 +178,13 @@ export class BackendClient {
     );
   }
 
+  /** An image in the chat's folder, which Pi embeds in a reply by its path. */
+  imageUrl(chatId: string, path: string) {
+    return this.fileUrl(
+      `${chatPath(chatId)}/images/${encodeURIComponent(path)}`,
+    );
+  }
+
   /** URL of a GET endpoint for links and images, which can't send the token in a header. */
   private fileUrl(path: string) {
     return `${this.baseUrl}${path}?token=${encodeURIComponent(this.token)}`;
