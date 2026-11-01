@@ -1,0 +1,93 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.button.secondary {
+  background: none;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.button.small {
+  padding: 4px 12px;
+  font-weight: 500;
+}
+
+.button.danger {
+  background: var(--danger);
+  color: var(--bg-raised);
+}
+
+.button.secondary.danger {
+  background: none;
+  color: var(--danger);
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  font-size: 18px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.iconButton:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.iconButton.small {
+  padding: 4px 6px;
+}
+
+.iconButton.danger:hover {
+  color: var(--danger);
+}
+
+.linkButton {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.linkButton.inline {
+  font-size: inherit;
+}
+
+.button:disabled,
+.linkButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.disclosure {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.disclosure::before {
+  content: "▸ ";
+}
+
+.disclosure[aria-expanded="true"]::before {
+  content: "▾ ";
+}

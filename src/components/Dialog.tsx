@@ -1,8 +1,8 @@
 import { type ReactNode, useEffect, useId, useRef } from "react";
 import { LuX } from "react-icons/lu";
 import { cx } from "../lib/cx";
+import { IconButton } from "./Button";
 import styles from "./Dialog.module.css";
-import ui from "./ui.module.css";
 
 interface DialogProps {
   open: boolean;
@@ -61,15 +61,11 @@ export function Dialog({
         <div className={styles.header}>
           <h2 id={titleId}>{title}</h2>
           {closeButton && (
-            <button
-              type="button"
-              className={cx(ui.iconButton, styles.close)}
-              aria-label="Close"
-              title="Close"
-              onClick={onClose}
-            >
-              <LuX size={18} aria-hidden />
-            </button>
+            <span className={styles.close}>
+              <IconButton aria-label="Close" title="Close" onClick={onClose}>
+                <LuX size={18} aria-hidden />
+              </IconButton>
+            </span>
           )}
         </div>
         {children}

@@ -6,8 +6,9 @@ import type { BackendClient } from "../lib/client";
 import { cx } from "../lib/cx";
 import { formatDate, formatSize } from "../lib/format";
 import styles from "./Artefacts.module.css";
+import { Button, IconButton, LinkButton } from "./Button";
+import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
-import ui from "./ui.module.css";
 
 /** A project's artefacts: download them, and unless the project is archived, upload and delete them. */
 export function Artefacts({
@@ -91,13 +92,13 @@ export function Artefacts({
         <h2 id={titleId}>Artefacts</h2>
         {editable && (
           <>
-            <button
-              type="button"
-              className={cx(ui.button, ui.secondary, styles.upload)}
+            <Button
+              variant="secondary"
+              size="small"
               onClick={() => inputRef.current?.click()}
             >
               <LuUpload size={14} aria-hidden /> Upload
-            </button>
+            </Button>
             <input
               ref={inputRef}
               type="file"
@@ -118,23 +119,13 @@ export function Artefacts({
       {replacing && (
         <div className={styles.confirm}>
           <span>Replace {conflicts.map((file) => file.name).join(", ")}?</span>
-          <button
-            type="button"
-            className={ui.button}
-            onClick={() => void upload(replacing)}
-          >
-            Replace
-          </button>
-          <button
-            type="button"
-            className={cx(ui.button, ui.secondary)}
-            onClick={() => setReplacing(null)}
-          >
+          <Button onClick={() => void upload(replacing)}>Replace</Button>
+          <Button variant="secondary" onClick={() => setReplacing(null)}>
             Cancel
-          </button>
+          </Button>
         </div>
       )}
-      {error && <div className={ui.error}>{error}</div>}
+      {error && <ErrorMessage variant="box">{error}</ErrorMessage>}
       <ul className={styles.list}>
         {project.artefacts.map((artefact) => (
           <li key={artefact.name} className={styles.artefact}>
@@ -155,31 +146,27 @@ export function Artefacts({
             {editable &&
               (deleting === artefact.name ? (
                 <span className={styles.deleteConfirm}>
-                  <button
-                    type="button"
-                    className={cx(ui.button, styles.danger)}
+                  <Button
+                    size="small"
+                    danger
                     onClick={() => void remove(artefact.name)}
                   >
                     Delete
-                  </button>
-                  <button
-                    type="button"
-                    className={ui.linkButton}
-                    onClick={() => setDeleting(null)}
-                  >
+                  </Button>
+                  <LinkButton onClick={() => setDeleting(null)}>
                     Cancel
-                  </button>
+                  </LinkButton>
                 </span>
               ) : (
-                <button
-                  type="button"
-                  className={cx(ui.iconButton, styles.delete)}
+                <IconButton
+                  size="small"
+                  danger
                   aria-label={`Delete ${artefact.name}`}
                   title="Delete"
                   onClick={() => setDeleting(artefact.name)}
                 >
                   <LuTrash2 size={15} aria-hidden />
-                </button>
+                </IconButton>
               ))}
           </li>
         ))}

@@ -1,0 +1,22 @@
+.box,
+.banner {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.banner {
+  max-width: 740px;
+  width: calc(100% - 40px);
+  margin: 0 auto 8px;
+}
+
+.text {
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--danger);
+}

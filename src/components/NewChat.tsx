@@ -4,10 +4,10 @@ import type { BackendClient } from "../lib/client";
 import { type Models, navigate } from "../lib/hooks";
 import { modelKey } from "../lib/models";
 import { Composer } from "./Composer";
+import { ErrorMessage } from "./ErrorMessage";
 import { Header } from "./Header";
 import { ModelSelect } from "./ModelSelect";
 import styles from "./NewChat.module.css";
-import ui from "./ui.module.css";
 
 const LAST_MODEL_KEY = "clnk.lastModel";
 
@@ -60,15 +60,15 @@ export function NewChatComposer({
   return (
     <>
       {models.error && !models.models && (
-        <div className={ui.errorBanner}>
+        <ErrorMessage variant="banner">
           Couldn't load models: {models.error}
-        </div>
+        </ErrorMessage>
       )}
       {models.models && available.length === 0 && (
-        <div className={ui.errorBanner}>
+        <ErrorMessage variant="banner">
           No models are available. Configure a provider for Pi on the backend
           machine.
-        </div>
+        </ErrorMessage>
       )}
       <Composer
         blockedReason={model ? undefined : "Pick a model to start"}

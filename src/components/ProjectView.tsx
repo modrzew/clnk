@@ -6,12 +6,13 @@ import { cx } from "../lib/cx";
 import { formatDate } from "../lib/format";
 import { type Models, routeHref } from "../lib/hooks";
 import { Artefacts } from "./Artefacts";
+import { Disclosure, IconButton, LinkButton } from "./Button";
+import { ErrorMessage } from "./ErrorMessage";
 import { Header } from "./Header";
 import { NewChatComposer } from "./NewChat";
 import { ProjectDialog } from "./ProjectDialog";
 import styles from "./ProjectView.module.css";
 import { Spinner } from "./Spinner";
-import ui from "./ui.module.css";
 
 interface ProjectViewProps {
   client: BackendClient;
@@ -90,18 +91,14 @@ export function ProjectView({
   return (
     <>
       <Header title={project.name} onMenu={onMenu}>
-        <button
-          type="button"
-          className={ui.iconButton}
+        <IconButton
           aria-label="Edit project"
           title="Edit project"
           onClick={() => setEditing(true)}
         >
           <LuPencil size={16} aria-hidden />
-        </button>
-        <button
-          type="button"
-          className={ui.iconButton}
+        </IconButton>
+        <IconButton
           aria-label={
             project.archived ? "Unarchive project" : "Archive project"
           }
@@ -113,7 +110,7 @@ export function ProjectView({
           ) : (
             <LuArchive size={16} aria-hidden />
           )}
-        </button>
+        </IconButton>
       </Header>
       {editing && (
         <ProjectDialog
@@ -130,27 +127,17 @@ export function ProjectView({
             <div className={styles.notice}>
               This project is archived: its chats and artefacts can't be
               changed.{" "}
-              <button
-                type="button"
-                className={cx(ui.linkButton, styles.noticeButton)}
-                onClick={() => setArchived(false)}
-              >
+              <LinkButton inline onClick={() => setArchived(false)}>
                 Unarchive it
-              </button>
+              </LinkButton>
             </div>
           )}
-          {error && <div className={ui.error}>{error}</div>}
+          {error && <ErrorMessage variant="box">{error}</ErrorMessage>}
 
           <section className={styles.section}>
             <div className={styles.sectionHeader}>
               <h2>Instructions</h2>
-              <button
-                type="button"
-                className={ui.linkButton}
-                onClick={() => setEditing(true)}
-              >
-                Edit
-              </button>
+              <LinkButton onClick={() => setEditing(true)}>Edit</LinkButton>
             </div>
             {project.instructions ? (
               <>
@@ -163,14 +150,14 @@ export function ProjectView({
                   {project.instructions}
                 </p>
                 {longInstructions && (
-                  <button
-                    type="button"
-                    className={cx(ui.disclosure, styles.more)}
-                    aria-expanded={showInstructions}
-                    onClick={() => setShowInstructions(!showInstructions)}
-                  >
-                    {showInstructions ? "Show less" : "Show all"}
-                  </button>
+                  <div className={styles.more}>
+                    <Disclosure
+                      expanded={showInstructions}
+                      onToggle={() => setShowInstructions(!showInstructions)}
+                    >
+                      {showInstructions ? "Show less" : "Show all"}
+                    </Disclosure>
+                  </div>
                 )}
               </>
             ) : (
@@ -198,14 +185,14 @@ export function ProjectView({
             )}
             {archived.length > 0 && (
               <>
-                <button
-                  type="button"
-                  className={cx(ui.disclosure, styles.more)}
-                  aria-expanded={showArchived}
-                  onClick={() => setShowArchived(!showArchived)}
-                >
-                  Archived ({archived.length})
-                </button>
+                <div className={styles.more}>
+                  <Disclosure
+                    expanded={showArchived}
+                    onToggle={() => setShowArchived(!showArchived)}
+                  >
+                    Archived ({archived.length})
+                  </Disclosure>
+                </div>
                 {showArchived && (
                   <ul className={styles.chats}>{archived.map(chatItem)}</ul>
                 )}

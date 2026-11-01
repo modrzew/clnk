@@ -58,7 +58,7 @@
 }
 
 .add {
-  align-self: flex-start;
+  display: flex;
 }
 
 .checkbox {
@@ -82,6 +82,6 @@
 }
 
 .delete {
+  display: flex;
   margin-right: auto;
-  color: var(--danger);
 }

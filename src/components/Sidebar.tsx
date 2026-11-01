@@ -14,9 +14,9 @@ import type {
 import type { ConnectionStatus } from "../lib/client";
 import { cx } from "../lib/cx";
 import { navigate, type Route, routeHref } from "../lib/hooks";
+import { Disclosure, IconButton, LinkButton } from "./Button";
 import styles from "./Sidebar.module.css";
 import { Spinner } from "./Spinner";
-import ui from "./ui.module.css";
 
 interface SidebarProps {
   chats: ChatSummary[] | null;
@@ -119,19 +119,20 @@ export function Sidebar({
         <span className={styles.chatTitle}>{chat.title}</span>
         {chat.status === "running" && <Spinner label="Running" />}
       </a>
-      <button
-        type="button"
-        className={cx(ui.iconButton, styles.chatAction)}
-        aria-label={chat.archived ? "Unarchive chat" : "Archive chat"}
-        title={chat.archived ? "Unarchive" : "Archive"}
-        onClick={() => onArchive(chat.id, !chat.archived)}
-      >
-        {chat.archived ? (
-          <LuArchiveRestore size={16} aria-hidden />
-        ) : (
-          <LuArchive size={16} aria-hidden />
-        )}
-      </button>
+      <span className={styles.chatAction}>
+        <IconButton
+          size="small"
+          aria-label={chat.archived ? "Unarchive chat" : "Archive chat"}
+          title={chat.archived ? "Unarchive" : "Archive"}
+          onClick={() => onArchive(chat.id, !chat.archived)}
+        >
+          {chat.archived ? (
+            <LuArchiveRestore size={16} aria-hidden />
+          ) : (
+            <LuArchive size={16} aria-hidden />
+          )}
+        </IconButton>
+      </span>
     </li>
   );
 
@@ -193,15 +194,13 @@ export function Sidebar({
       >
         <div className={styles.top}>
           <span className={styles.brand}>clnk</span>
-          <button
-            type="button"
-            className={cx(ui.iconButton, styles.settingsButton)}
+          <IconButton
             aria-label="Settings"
             title="Settings"
             onClick={onOpenSettings}
           >
             <LuSlidersHorizontal size={16} aria-hidden />
-          </button>
+          </IconButton>
           <a className={styles.newChatButton} href="#/" onClick={onClose}>
             + New chat
           </a>
@@ -209,15 +208,14 @@ export function Sidebar({
         <div className={styles.lists}>
           <div className={styles.sectionHeader}>
             <h2>Projects</h2>
-            <button
-              type="button"
-              className={ui.iconButton}
+            <IconButton
+              size="small"
               aria-label="New project"
               title="New project"
               onClick={onNewProject}
             >
               <LuPlus size={16} aria-hidden />
-            </button>
+            </IconButton>
           </div>
           <ul className={styles.chatList}>
             {currentProjects?.map(projectItem)}
@@ -225,15 +223,15 @@ export function Sidebar({
               <li className={styles.empty}>No projects yet</li>
             )}
             {archivedProjects.length > 0 && (
-              <li>
-                <button
-                  type="button"
-                  className={cx(ui.disclosure, styles.archivedToggle)}
-                  aria-expanded={showArchivedProjects}
-                  onClick={() => setShowArchivedProjects(!showArchivedProjects)}
+              <li className={styles.archivedToggle}>
+                <Disclosure
+                  expanded={showArchivedProjects}
+                  onToggle={() =>
+                    setShowArchivedProjects(!showArchivedProjects)
+                  }
                 >
                   Archived ({archivedProjects.length})
-                </button>
+                </Disclosure>
               </li>
             )}
             {showArchivedProjects && archivedProjects.map(projectItem)}
@@ -247,15 +245,13 @@ export function Sidebar({
               <li className={styles.empty}>No chats yet</li>
             )}
             {archived.length > 0 && (
-              <li>
-                <button
-                  type="button"
-                  className={cx(ui.disclosure, styles.archivedToggle)}
-                  aria-expanded={showArchived}
-                  onClick={() => setShowArchived(!showArchived)}
+              <li className={styles.archivedToggle}>
+                <Disclosure
+                  expanded={showArchived}
+                  onToggle={() => setShowArchived(!showArchived)}
                 >
                   Archived ({archived.length})
-                </button>
+                </Disclosure>
               </li>
             )}
             {showArchived && archived.map(chatItem)}
@@ -281,13 +277,7 @@ export function Sidebar({
             {user && `${user.name} @ `}
             {backendUrl.replace(/^https?:\/\//, "")}
           </span>
-          <button
-            type="button"
-            className={ui.linkButton}
-            onClick={onChangeBackend}
-          >
-            Change
-          </button>
+          <LinkButton onClick={onChangeBackend}>Change</LinkButton>
         </div>
       </nav>
     </>

@@ -56,7 +56,7 @@
 
 @media (max-width: 760px) {
   .menuButton {
-    display: block;
+    display: flex;
     margin-left: -8px;
   }
 }

@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { cx } from "../lib/cx";
 import { formatDate } from "../lib/format";
 import {
   currentVersion,
@@ -9,10 +8,11 @@ import {
   type AvailableUpdate,
   type ReleaseInfo,
 } from "../lib/updates";
+import { Button } from "./Button";
 import { Dialog } from "./Dialog";
+import { ErrorMessage } from "./ErrorMessage";
 import { Markdown } from "./Markdown";
 import styles from "./UpdateDialog.module.css";
-import ui from "./ui.module.css";
 
 interface UpdateDialogProps {
   /** The latest release. */
@@ -139,7 +139,7 @@ export function UpdateDialog({ update, onClose }: UpdateDialogProps) {
       ) : (
         !error && <p className={styles.noNotes}>Loading release notes…</p>
       )}
-      {error && <div className={ui.errorText}>{error}</div>}
+      {error && <ErrorMessage>{error}</ErrorMessage>}
       {progress !== null && (
         <div className={styles.progress}>
           <div
@@ -154,22 +154,15 @@ export function UpdateDialog({ update, onClose }: UpdateDialogProps) {
           : "clnk closes, replaces itself with the new version and opens again."}
       </p>
       <div className={styles.actions}>
-        <button
-          type="button"
-          className={cx(ui.button, ui.secondary)}
-          disabled={busy}
-          onClick={onClose}
-        >
+        <Button variant="secondary" disabled={busy} onClick={onClose}>
           Cancel
-        </button>
-        <button
-          type="button"
-          className={ui.button}
+        </Button>
+        <Button
           disabled={phase.name !== "ready"}
           onClick={() => void install()}
         >
           {label}
-        </button>
+        </Button>
       </div>
     </Dialog>
   );

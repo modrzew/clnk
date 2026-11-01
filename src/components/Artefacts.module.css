@@ -25,14 +25,6 @@
   font-size: 16px;
 }
 
-.upload {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  font-weight: 500;
-}
-
 .hint {
   margin: 0;
   font-size: 13px;
@@ -104,26 +96,11 @@ a.name:hover {
   color: var(--text-muted);
 }
 
-.delete {
-  flex-shrink: 0;
-  padding: 4px 6px;
-}
-
-.delete:hover {
-  color: var(--danger);
-}
-
 .deleteConfirm {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-}
-
-.danger {
-  padding: 3px 10px;
-  background: var(--danger);
-  color: var(--bg-raised);
 }
 
 .empty {

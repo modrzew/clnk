@@ -1,9 +1,4 @@
-/*
- * Cascade layers, lowest first: these globals, then the shared controls in components/ui.module.css.
- * Component CSS modules are unlayered, so their classes override both whatever the import order.
- */
-@layer base, ui;
-
+/* These globals are in a cascade layer, so component CSS modules, which are unlayered, override them whatever the import order. */
 @layer base {
   :root {
     --bg: #fbfbfa;

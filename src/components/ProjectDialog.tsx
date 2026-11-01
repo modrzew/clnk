@@ -1,9 +1,9 @@
 import { type FormEvent, useState } from "react";
 import type { ProjectSummary } from "../../shared/protocol";
-import { cx } from "../lib/cx";
+import { Button } from "./Button";
 import { Dialog } from "./Dialog";
+import { ErrorMessage } from "./ErrorMessage";
 import styles from "./ProjectDialog.module.css";
-import ui from "./ui.module.css";
 
 export interface ProjectFields {
   name: string;
@@ -71,22 +71,14 @@ export function ProjectDialog({
             onChange={(event) => setInstructions(event.target.value)}
           />
         </label>
-        {error && <div className={ui.errorText}>{error}</div>}
+        {error && <ErrorMessage>{error}</ErrorMessage>}
         <div className={styles.actions}>
-          <button
-            type="button"
-            className={cx(ui.button, ui.secondary)}
-            onClick={onClose}
-          >
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="submit"
-            className={ui.button}
-            disabled={!name.trim() || saving}
-          >
+          </Button>
+          <Button type="submit" disabled={!name.trim() || saving}>
             {project ? "Save" : "Create"}
-          </button>
+          </Button>
         </div>
       </form>
     </Dialog>

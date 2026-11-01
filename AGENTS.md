@@ -22,6 +22,7 @@ Client-server chat frontend for the Pi agent harness: Bun backend (`server/`) + 
 
 ## Gotchas
 
+- Components don't take `className` or `style` props: props of their own (`variant`, `size`, …) steer how they look, and their CSS module sits next to them. To place a component (margins, visibility), wrap it in an element of your own.
 - Components style with CSS modules. Their class types are generated into the gitignored `generated/` by css-modules-kit (`cmk`, run by `typecheck` and `build`; `bun dev` keeps them current). Bare `tsc` without them silently types every class as `string`.
 
 - Per-chat workspace folders are transient and may be pruned; any code reading them must tolerate missing files (e.g. `readTranscript` → `[]`).

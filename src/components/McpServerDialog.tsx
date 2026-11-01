@@ -2,10 +2,10 @@ import { type FormEvent, useState } from "react";
 import { LuX } from "react-icons/lu";
 import type { McpServerConfig, McpServerInfo } from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
-import { cx } from "../lib/cx";
+import { Button, IconButton, LinkButton } from "./Button";
 import { Dialog } from "./Dialog";
+import { ErrorMessage } from "./ErrorMessage";
 import styles from "./McpServerDialog.module.css";
-import ui from "./ui.module.css";
 
 interface Pair {
   name: string;
@@ -190,34 +190,28 @@ export function McpServerDialog({
           />
           Use in chats
         </label>
-        {error && <div className={ui.errorText}>{error}</div>}
+        {error && <ErrorMessage>{error}</ErrorMessage>}
         <div className={styles.actions}>
           {server && (
-            <button
-              type="button"
-              className={cx(ui.button, ui.secondary, styles.delete)}
-              disabled={saving}
-              onClick={() =>
-                void save(() => client.deleteMcpServer(server.name))
-              }
-            >
-              Delete
-            </button>
+            <span className={styles.delete}>
+              <Button
+                variant="secondary"
+                danger
+                disabled={saving}
+                onClick={() =>
+                  void save(() => client.deleteMcpServer(server.name))
+                }
+              >
+                Delete
+              </Button>
+            </span>
           )}
-          <button
-            type="button"
-            className={cx(ui.button, ui.secondary)}
-            onClick={onClose}
-          >
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="submit"
-            className={ui.button}
-            disabled={!complete || saving}
-          >
+          </Button>
+          <Button type="submit" disabled={!complete || saving}>
             {server ? "Save" : "Add"}
-          </button>
+          </Button>
         </div>
       </form>
     </Dialog>
@@ -268,23 +262,21 @@ function PairsField({
               update(index, { ...pair, value: event.target.value })
             }
           />
-          <button
-            type="button"
-            className={ui.iconButton}
+          <IconButton
             aria-label="Remove"
             onClick={() => onChange(pairs.filter((_, i) => i !== index))}
           >
             <LuX size={16} aria-hidden />
-          </button>
+          </IconButton>
         </div>
       ))}
-      <button
-        type="button"
-        className={cx(ui.linkButton, styles.add)}
-        onClick={() => onChange([...pairs, { name: "", value: "" }])}
-      >
-        {add}
-      </button>
+      <div className={styles.add}>
+        <LinkButton
+          onClick={() => onChange([...pairs, { name: "", value: "" }])}
+        >
+          {add}
+        </LinkButton>
+      </div>
     </div>
   );
 }

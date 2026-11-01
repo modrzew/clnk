@@ -24,11 +24,12 @@ import { cx } from "../lib/cx";
 import { useExpandable } from "../lib/prefs";
 import { fadePieces, type Revealed, useReveal } from "../lib/reveal";
 import { FileList, ImageList } from "./Attachments";
+import { Button, Disclosure, LinkButton } from "./Button";
+import { ErrorMessage } from "./ErrorMessage";
 import { Markdown } from "./Markdown";
 import { Spinner } from "./Spinner";
 import { ToolCallView } from "./ToolCall";
 import styles from "./Transcript.module.css";
-import ui from "./ui.module.css";
 
 /** Edits (with `message`) or retries the user message with the given timestamp. */
 export type Rewind = (timestamp: number, message?: string) => Promise<void>;
@@ -244,13 +245,7 @@ function UserMessageView({
       </div>
       {onRewind && (
         <div className={styles.msgActions}>
-          <button
-            type="button"
-            className={ui.linkButton}
-            onClick={() => setEditing(true)}
-          >
-            Edit
-          </button>
+          <LinkButton onClick={() => setEditing(true)}>Edit</LinkButton>
         </div>
       )}
     </div>
@@ -326,28 +321,19 @@ function EditMessage({
             <span>{attachments.join(", ")}</span>
           </div>
         )}
-        {error && <div className={ui.errorText}>{error}</div>}
+        {error && <ErrorMessage>{error}</ErrorMessage>}
         <div className={styles.editActions}>
           <span className={styles.editHint}>
             {onSave
               ? "Pi answers again from here; later messages are replaced."
               : "Wait for Pi to finish to send this."}
           </span>
-          <button
-            type="button"
-            className={cx(ui.button, ui.secondary)}
-            onClick={onCancel}
-          >
+          <Button variant="secondary" onClick={onCancel}>
             Cancel
-          </button>
-          <button
-            type="button"
-            className={ui.button}
-            disabled={!canSave}
-            onClick={() => void save()}
-          >
+          </Button>
+          <Button disabled={!canSave} onClick={() => void save()}>
             Send
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -359,9 +345,7 @@ function RetryButton({ onRetry }: { onRetry: () => Promise<void> }) {
   const [error, setError] = useState<string | null>(null);
   return (
     <div className={styles.retry}>
-      <button
-        type="button"
-        className={ui.linkButton}
+      <LinkButton
         disabled={pending}
         title="Send the last message again"
         onClick={() => {
@@ -373,8 +357,8 @@ function RetryButton({ onRetry }: { onRetry: () => Promise<void> }) {
         }}
       >
         ↻ Retry
-      </button>
-      {error && <span className={ui.errorText}>{error}</span>}
+      </LinkButton>
+      {error && <ErrorMessage>{error}</ErrorMessage>}
     </div>
   );
 }
@@ -436,9 +420,9 @@ function AssistantView({
         }
       })}
       {message.stopReason === "error" && (
-        <div className={ui.error}>
+        <ErrorMessage variant="box">
           {message.errorMessage || "The model returned an error."}
-        </div>
+        </ErrorMessage>
       )}
       {message.stopReason === "aborted" && (
         <div className={styles.msgNote}>Stopped.</div>
@@ -497,18 +481,13 @@ function Thinking({
   if (!text && !active) return null;
   return (
     <div>
-      <button
-        type="button"
-        className={ui.disclosure}
-        aria-expanded={open}
-        onClick={toggle}
-      >
+      <Disclosure expanded={open} onToggle={toggle}>
         {active
           ? "Thinking…"
           : block.redacted
             ? "Thinking (redacted)"
             : "Thinking"}
-      </button>
+      </Disclosure>
       {open && revealed.text && (
         <div className={styles.thinkingBody}>
           <FadedText {...revealed} />

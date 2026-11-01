@@ -11,6 +11,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 4px;
   padding: 12px 12px 8px 16px;
   padding-top: max(12px, env(safe-area-inset-top));
 }
@@ -19,10 +20,6 @@
   flex: 1;
   font-weight: 700;
   letter-spacing: 0.02em;
-}
-
-.settingsButton {
-  margin-right: 4px;
 }
 
 .newChatButton {
@@ -62,10 +59,6 @@
   color: var(--text-muted);
 }
 
-.sectionHeader button {
-  padding: 4px 6px;
-}
-
 .chatList {
   list-style: none;
   margin: 0;
@@ -103,14 +96,14 @@
   top: 50%;
   right: 4px;
   transform: translateY(-50%);
-  padding: 4px 6px;
+  border-radius: 8px;
   background: var(--bg-hover);
 }
 
 @media (hover: hover) {
   .chatList li:hover > .chatAction,
-  .chatAction:focus-visible {
-    display: inline-flex;
+  .chatAction:focus-within {
+    display: flex;
   }
 
   .chatList li:hover > a {
@@ -118,12 +111,9 @@
   }
 }
 
-.chatAction:hover {
-  color: var(--text);
-}
-
 .archivedToggle {
-  margin-top: 8px;
+  display: flex;
+  padding-top: 8px;
 }
 
 .project {

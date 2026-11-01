@@ -29,10 +29,6 @@
   color: var(--text-muted);
 }
 
-.noticeButton {
-  font-size: 14px;
-}
-
 .section {
   display: flex;
   flex-direction: column;
@@ -73,7 +69,7 @@
 }
 
 .more {
-  align-self: flex-start;
+  display: flex;
 }
 
 .chats {

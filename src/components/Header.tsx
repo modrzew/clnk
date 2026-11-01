@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
-import { cx } from "../lib/cx";
+import { IconButton } from "./Button";
 import styles from "./Header.module.css";
 import { Spinner } from "./Spinner";
-import ui from "./ui.module.css";
 
 interface HeaderProps {
   title: string;
@@ -23,14 +22,11 @@ export function Header({
 }: HeaderProps) {
   return (
     <header className={styles.header}>
-      <button
-        type="button"
-        className={cx(ui.iconButton, styles.menuButton)}
-        aria-label="Show chats"
-        onClick={onMenu}
-      >
-        ☰
-      </button>
+      <span className={styles.menuButton}>
+        <IconButton aria-label="Show chats" onClick={onMenu}>
+          ☰
+        </IconButton>
+      </span>
       <h1 className={styles.title}>
         {parent && (
           <>

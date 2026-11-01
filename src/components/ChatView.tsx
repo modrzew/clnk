@@ -6,17 +6,17 @@ import type {
   ProjectSummary,
 } from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
-import { cx } from "../lib/cx";
 import { routeHref, useTranscript } from "../lib/hooks";
 import { modelKey } from "../lib/models";
+import { IconButton, LinkButton } from "./Button";
 import styles from "./ChatView.module.css";
 import { Composer } from "./Composer";
 import { ContextMeter } from "./ContextMeter";
+import { ErrorMessage } from "./ErrorMessage";
 import { Header } from "./Header";
 import { ModelLabel, ModelSelect } from "./ModelSelect";
 import { Spinner } from "./Spinner";
 import { Transcript } from "./Transcript";
-import ui from "./ui.module.css";
 
 interface ChatViewProps {
   client: BackendClient;
@@ -95,9 +95,7 @@ export function ChatView({
         onMenu={onMenu}
       >
         {chat && (
-          <button
-            type="button"
-            className={ui.iconButton}
+          <IconButton
             aria-label={archived ? "Unarchive chat" : "Archive chat"}
             title={archived ? "Unarchive chat" : "Archive chat"}
             onClick={() => setArchived(!archived)}
@@ -107,7 +105,7 @@ export function ChatView({
             ) : (
               <LuArchive size={16} aria-hidden />
             )}
-          </button>
+          </IconButton>
         )}
       </Header>
       {transcript.loaded ? (
@@ -124,31 +122,25 @@ export function ChatView({
         </div>
       )}
       {transcript.error && (
-        <div className={ui.errorBanner}>{transcript.error}</div>
+        <ErrorMessage variant="banner">{transcript.error}</ErrorMessage>
       )}
-      {actionError && <div className={ui.errorBanner}>{actionError}</div>}
+      {actionError && (
+        <ErrorMessage variant="banner">{actionError}</ErrorMessage>
+      )}
       {projectArchived ? (
         <div className={styles.archivedNotice}>
           This chat's project is archived.{" "}
-          <button
-            type="button"
-            className={cx(ui.linkButton, styles.unarchiveButton)}
-            onClick={unarchiveProject}
-          >
+          <LinkButton inline onClick={unarchiveProject}>
             Unarchive the project
-          </button>{" "}
+          </LinkButton>{" "}
           to continue.
         </div>
       ) : archived ? (
         <div className={styles.archivedNotice}>
           This chat is archived.{" "}
-          <button
-            type="button"
-            className={cx(ui.linkButton, styles.unarchiveButton)}
-            onClick={() => setArchived(false)}
-          >
+          <LinkButton inline onClick={() => setArchived(false)}>
             Unarchive it
-          </button>{" "}
+          </LinkButton>{" "}
           to continue.
         </div>
       ) : (

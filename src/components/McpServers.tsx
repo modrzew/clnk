@@ -1,11 +1,11 @@
 import { type FormEvent, useEffect, useState } from "react";
 import type { McpServerInfo } from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
-import { cx } from "../lib/cx";
+import { Button, LinkButton } from "./Button";
+import { ErrorMessage } from "./ErrorMessage";
 import { McpServerDialog } from "./McpServerDialog";
 import styles from "./McpServers.module.css";
 import { Spinner } from "./Spinner";
-import ui from "./ui.module.css";
 
 /** The MCP servers in the user's chats: global ones, and the user's own to add, edit and sign in to. */
 export function McpServers({ client }: { client: BackendClient }) {
@@ -60,7 +60,7 @@ export function McpServers({ client }: { client: BackendClient }) {
 
   if (!servers)
     return error ? (
-      <div className={ui.errorText}>{error}</div>
+      <ErrorMessage>{error}</ErrorMessage>
     ) : (
       <Spinner label="Loading" />
     );
@@ -82,33 +82,26 @@ export function McpServers({ client }: { client: BackendClient }) {
                 </span>
                 <span className={styles.actions}>
                   {server.signedIn === false && (
-                    <button
-                      type="button"
-                      className={cx(ui.button, ui.secondary)}
+                    <Button
+                      variant="secondary"
                       disabled={busy === server.name}
                       onClick={() => void startSignIn(server.name)}
                     >
                       Sign in
-                    </button>
+                    </Button>
                   )}
                   {server.signedIn && (
-                    <button
-                      type="button"
-                      className={ui.linkButton}
+                    <LinkButton
                       disabled={busy === server.name}
                       onClick={() => void signOut(server.name)}
                     >
                       Sign out
-                    </button>
+                    </LinkButton>
                   )}
                   {!server.global && (
-                    <button
-                      type="button"
-                      className={ui.linkButton}
-                      onClick={() => setEditing(server)}
-                    >
+                    <LinkButton onClick={() => setEditing(server)}>
                       Edit
-                    </button>
+                    </LinkButton>
                   )}
                 </span>
               </div>
@@ -124,15 +117,11 @@ export function McpServers({ client }: { client: BackendClient }) {
           ))}
         </ul>
       )}
-      {error && <div className={ui.errorText}>{error}</div>}
+      {error && <ErrorMessage>{error}</ErrorMessage>}
       <div>
-        <button
-          type="button"
-          className={cx(ui.button, ui.secondary)}
-          onClick={() => setEditing("new")}
-        >
+        <Button variant="secondary" onClick={() => setEditing("new")}>
           Add server
-        </button>
+        </Button>
       </div>
       {editing && (
         <McpServerDialog
@@ -216,22 +205,14 @@ function SignInForm({
         value={address}
         onChange={(event) => setAddress(event.target.value)}
       />
-      {error && <div className={ui.errorText}>{error}</div>}
+      {error && <ErrorMessage>{error}</ErrorMessage>}
       <div className={styles.formActions}>
-        <button
-          type="button"
-          className={cx(ui.button, ui.secondary)}
-          onClick={onDone}
-        >
+        <Button variant="secondary" onClick={onDone}>
           Cancel
-        </button>
-        <button
-          type="submit"
-          className={ui.button}
-          disabled={!address.trim() || saving}
-        >
+        </Button>
+        <Button type="submit" disabled={!address.trim() || saving}>
           Finish signing in
-        </button>
+        </Button>
       </div>
     </form>
   );

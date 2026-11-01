@@ -15,8 +15,8 @@ import { MAX_REQUEST_BYTES } from "../../shared/protocol";
 import { cx } from "../lib/cx";
 import { formatSize } from "../lib/format";
 import styles from "./Composer.module.css";
+import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
-import ui from "./ui.module.css";
 
 interface ComposerProps {
   /** Sends the text, which may be empty if files are attached. */
@@ -184,7 +184,7 @@ export function Composer({
       onSubmit={(event) => void submit(event)}
       {...dropProps}
     >
-      {error && <div className={ui.errorText}>{error}</div>}
+      {error && <ErrorMessage>{error}</ErrorMessage>}
       {seesImages === false &&
         files.some((pending) => isImage(pending.file)) && (
           <div className={styles.hint}>

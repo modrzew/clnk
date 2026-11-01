@@ -2,7 +2,6 @@ import { type FormEvent, type KeyboardEvent, useId, useState } from "react";
 import { LuBell, LuListCollapse, LuPlug, LuUserRound } from "react-icons/lu";
 import type { UserInfo } from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
-import { cx } from "../lib/cx";
 import {
   notificationSupport,
   setNotificationsEnabled,
@@ -15,10 +14,11 @@ import {
   setExpandMode,
   useDisplayPrefs,
 } from "../lib/prefs";
+import { Button, LinkButton } from "./Button";
 import { Dialog } from "./Dialog";
+import { ErrorMessage } from "./ErrorMessage";
 import { McpServers } from "./McpServers";
 import styles from "./Settings.module.css";
-import ui from "./ui.module.css";
 
 const SECTIONS = (
   [
@@ -234,21 +234,13 @@ function AccountSettings({
         </span>
         <span className={styles.accountActions}>
           {!changing && (
-            <button
-              type="button"
-              className={ui.linkButton}
-              onClick={() => setChanging(true)}
-            >
+            <LinkButton onClick={() => setChanging(true)}>
               Change password
-            </button>
+            </LinkButton>
           )}
-          <button
-            type="button"
-            className={cx(ui.button, ui.secondary)}
-            onClick={onLogOut}
-          >
+          <Button variant="secondary" onClick={onLogOut}>
             Log out
-          </button>
+          </Button>
         </span>
       </div>
       {changing && (
@@ -321,22 +313,17 @@ function PasswordForm({
         value={repeated}
         onChange={(event) => setRepeated(event.target.value)}
       />
-      {error && <div className={ui.errorText}>{error}</div>}
+      {error && <ErrorMessage>{error}</ErrorMessage>}
       <div className={styles.formActions}>
-        <button
-          type="button"
-          className={cx(ui.button, ui.secondary)}
-          onClick={() => onDone(false)}
-        >
+        <Button variant="secondary" onClick={() => onDone(false)}>
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="submit"
-          className={ui.button}
           disabled={saving || !current || !password || !repeated}
         >
           Change password
-        </button>
+        </Button>
       </div>
     </form>
   );
