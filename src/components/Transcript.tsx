@@ -1,6 +1,7 @@
 import {
   type KeyboardEvent,
   memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -21,6 +22,7 @@ import type {
 import type { TranscriptState } from "../../shared/transcript";
 import { cx } from "../lib/cx";
 import { useExpandable } from "../lib/prefs";
+import { fadePieces, type Revealed, useReveal } from "../lib/reveal";
 import { FileList, ImageList } from "./Attachments";
 import { Markdown } from "./Markdown";
 import { Spinner } from "./Spinner";
@@ -68,21 +70,20 @@ export function Transcript({
     return map;
   }, [messages]);
 
-  useLayoutEffect(() => {
+  const keepEndInView = useCallback(() => {
     const el = scrollRef.current;
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [transcript, running]);
+  }, []);
+
+  useLayoutEffect(keepEndInView, [transcript, running, keepEndInView]);
 
   // Images load after they're rendered, and push the end down. `load` doesn't bubble, but can be captured.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const onLoad = () => {
-      if (stickToBottom.current) el.scrollTop = el.scrollHeight;
-    };
-    el.addEventListener("load", onLoad, true);
-    return () => el.removeEventListener("load", onLoad, true);
-  }, []);
+    el.addEventListener("load", keepEndInView, true);
+    return () => el.removeEventListener("load", keepEndInView, true);
+  }, [keepEndInView]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -101,30 +102,26 @@ export function Transcript({
   return (
     <div className={styles.transcript} ref={scrollRef} onScroll={onScroll}>
       <div className={styles.inner}>
-        {messages.map((message, index) => (
-          <MessageView
-            key={`${index}:${message.timestamp}`}
-            message={message}
-            results={results}
-            // Only messages with tool calls still waiting for results re-render as output streams.
-            toolOutput={
-              hasPendingCalls(message, results) ? toolOutput : NO_OUTPUT
-            }
-            running={running}
-            attachmentUrl={attachmentUrl}
-            imageUrl={imageUrl}
-            onRewind={onRewind}
-          />
-        ))}
-        {streaming && (
-          <AssistantView
-            message={streaming}
-            results={results}
-            toolOutput={toolOutput}
-            imageUrl={imageUrl}
-            running
-            streaming
-          />
+        {/* The streaming message has the key it gets once it's done, so its view stays, e.g. to finish
+            revealing its text. */}
+        {(streaming ? [...messages, streaming] : messages).map(
+          (message, index) => (
+            <MessageView
+              key={`${index}:${message.timestamp}`}
+              message={message}
+              results={results}
+              // Only messages with tool calls still waiting for results re-render as output streams.
+              toolOutput={
+                hasPendingCalls(message, results) ? toolOutput : NO_OUTPUT
+              }
+              running={running}
+              streaming={message === streaming}
+              onReveal={keepEndInView}
+              attachmentUrl={attachmentUrl}
+              imageUrl={imageUrl}
+              onRewind={onRewind}
+            />
+          ),
         )}
         {queued.map((text, index) => (
           <div key={index} className={cx(styles.msgUser, styles.queued)}>
@@ -152,6 +149,9 @@ interface MessageViewProps {
   results: Map<string, ToolResultMessage>;
   toolOutput: Record<string, string>;
   running: boolean;
+  streaming: boolean;
+  /** Called when more of a streamed text is shown. */
+  onReveal: () => void;
   attachmentUrl: AttachmentUrl;
   imageUrl: ImageUrl;
   onRewind?: Rewind;
@@ -162,6 +162,8 @@ const MessageView = memo(function MessageView({
   results,
   toolOutput,
   running,
+  streaming,
+  onReveal,
   attachmentUrl,
   imageUrl,
   onRewind,
@@ -182,7 +184,9 @@ const MessageView = memo(function MessageView({
           results={results}
           toolOutput={toolOutput}
           imageUrl={imageUrl}
-          running={running}
+          running={running || streaming}
+          streaming={streaming}
+          onReveal={onReveal}
         />
       );
     case "custom":
@@ -381,7 +385,8 @@ interface AssistantViewProps {
   toolOutput: Record<string, string>;
   imageUrl: ImageUrl;
   running: boolean;
-  streaming?: boolean;
+  streaming: boolean;
+  onReveal: () => void;
 }
 
 function AssistantView({
@@ -390,7 +395,8 @@ function AssistantView({
   toolOutput,
   imageUrl,
   running,
-  streaming = false,
+  streaming,
+  onReveal,
 }: AssistantViewProps) {
   const lastIndex = message.content.length - 1;
   return (
@@ -398,15 +404,21 @@ function AssistantView({
       {message.content.map((block, index) => {
         switch (block.type) {
           case "text":
-            return block.text.trim() ? (
-              <Markdown key={index} text={block.text} imageUrl={imageUrl} />
-            ) : null;
+            return (
+              <ReplyText
+                key={index}
+                text={block.text}
+                imageUrl={imageUrl}
+                onReveal={onReveal}
+              />
+            );
           case "thinking":
             return (
               <Thinking
                 key={index}
                 block={block}
                 active={streaming && index === lastIndex}
+                onReveal={onReveal}
               />
             );
           case "toolCall":
@@ -438,15 +450,50 @@ function AssistantView({
   );
 }
 
+/** Text of a reply, revealed letter by letter as it streams in. */
+function ReplyText({
+  text,
+  imageUrl,
+  onReveal,
+}: {
+  text: string;
+  imageUrl: ImageUrl;
+  onReveal: () => void;
+}) {
+  const revealed = useReveal(text);
+  useLayoutEffect(onReveal, [revealed.text, onReveal]);
+  if (!revealed.text.trim()) return null;
+  return (
+    <Markdown text={revealed.text} fade={revealed.fade} imageUrl={imageUrl} />
+  );
+}
+
+function FadedText({ text, fade }: Revealed) {
+  if (!fade) return text;
+  return fadePieces(text, 0, fade).map(({ text, opacity }, index) =>
+    opacity === undefined ? (
+      text
+    ) : (
+      <span key={index} style={{ opacity }}>
+        {text}
+      </span>
+    ),
+  );
+}
+
 function Thinking({
   block,
   active,
+  onReveal,
 }: {
   block: ThinkingContent;
   active: boolean;
+  onReveal: () => void;
 }) {
   const [open, toggle] = useExpandable("thinking", active);
   const text = block.thinking.trim();
+  const revealed = useReveal(text);
+  useLayoutEffect(onReveal, [revealed.text, onReveal]);
   if (!text && !active) return null;
   return (
     <div>
@@ -462,7 +509,11 @@ function Thinking({
             ? "Thinking (redacted)"
             : "Thinking"}
       </button>
-      {open && text && <div className={styles.thinkingBody}>{text}</div>}
+      {open && revealed.text && (
+        <div className={styles.thinkingBody}>
+          <FadedText {...revealed} />
+        </div>
+      )}
     </div>
   );
 }

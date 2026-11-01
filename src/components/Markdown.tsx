@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from "react";
 import { LuImageOff } from "react-icons/lu";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { type Fade, rehypeFade } from "../lib/reveal";
 import { Lightbox } from "./Attachments";
 import styles from "./Markdown.module.css";
 
@@ -14,10 +15,13 @@ const components: Components = {
 export const Markdown = memo(function Markdown({
   text,
   imageUrl,
+  fade,
 }: {
   text: string;
   /** Where to load images the text embeds by path rather than URL. Without it, they don't load. */
   imageUrl?: (path: string) => string;
+  /** Letters of the text that are fading in, see `useReveal`. */
+  fade?: Fade;
 }) {
   const withImages = useMemo<Components>(
     () => ({
@@ -32,7 +36,11 @@ export const Markdown = memo(function Markdown({
   );
   return (
     <div className={styles.markdown}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={withImages}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={fade && [[rehypeFade, fade]]}
+        components={withImages}
+      >
         {text}
       </ReactMarkdown>
     </div>
