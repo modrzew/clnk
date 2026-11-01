@@ -39,22 +39,58 @@
   gap: 4px;
 }
 
-/* Beside the bubble, so the hidden actions don't leave a gap under it. */
-.msgActions {
-  order: -1;
+/* When a message was sent, and buttons for it. Shown on hover, or on touch screens when the message is tapped. */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   opacity: 0;
   transition: opacity 0.15s ease;
 }
 
-.msgUser:hover .msgActions,
-.msgActions:focus-within {
+.footer:focus-within {
   opacity: 1;
 }
 
-@media (hover: none) {
-  .msgActions {
+@media (hover: hover) {
+  .msgUser:hover .footer,
+  .reply:hover .footer {
     opacity: 1;
   }
+}
+
+/* A tap focuses the message, and tapping elsewhere hides its footer again. */
+@media (hover: none) {
+  /* Taps on the hidden buttons go to the message instead. */
+  .footer {
+    pointer-events: none;
+  }
+
+  .userContent:focus-within .footer,
+  .reply:focus-within .footer {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.userContent:focus,
+.reply:focus {
+  outline: none;
+}
+
+/* Lines the icons up with the edge of the text or bubble. */
+.userContent .footer {
+  margin-right: -6px;
+}
+
+.reply .footer {
+  margin: 4px 0 0 -6px;
+}
+
+.time {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .msgUser.queued .bubble {
@@ -207,7 +243,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .msgActions {
+  .footer {
     transition: none;
   }
 }

@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { LuPaperclip } from "react-icons/lu";
+import { LuCheck, LuCopy, LuPaperclip, LuPencil, LuX } from "react-icons/lu";
 import type {
   AssistantMessage,
   ChatMessage,
@@ -20,11 +20,13 @@ import type {
   UserMessage,
 } from "../../shared/protocol";
 import type { TranscriptState } from "../../shared/transcript";
+import { copyText } from "../lib/clipboard";
 import { cx } from "../lib/cx";
+import { formatTime } from "../lib/format";
 import { useExpandable } from "../lib/prefs";
 import { fadePieces, type Revealed, useReveal } from "../lib/reveal";
 import { FileList, ImageList } from "./Attachments";
-import { Button, Disclosure, LinkButton } from "./Button";
+import { Button, Disclosure, IconButton, LinkButton } from "./Button";
 import { ErrorMessage } from "./ErrorMessage";
 import { Markdown } from "./Markdown";
 import { Spinner } from "./Spinner";
@@ -238,16 +240,26 @@ function UserMessageView({
     );
   return (
     <div className={styles.msgUser}>
-      <div className={styles.userContent}>
+      {/* Focusable so that tapping it shows its footer on touch screens. */}
+      <div className={styles.userContent} tabIndex={-1}>
         {images.length > 0 && <ImageList images={images} />}
         {files.length > 0 && <FileList files={files} href={attachmentUrl} />}
         {text.trim() && <div className={styles.bubble}>{text}</div>}
-      </div>
-      {onRewind && (
-        <div className={styles.msgActions}>
-          <LinkButton onClick={() => setEditing(true)}>Edit</LinkButton>
+        <div className={styles.footer}>
+          <MessageTime timestamp={message.timestamp} />
+          {onRewind && (
+            <IconButton
+              size="small"
+              aria-label="Edit"
+              title="Edit"
+              onClick={() => setEditing(true)}
+            >
+              <LuPencil size={14} aria-hidden />
+            </IconButton>
+          )}
+          {text.trim() && <CopyButton text={text} />}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -392,6 +404,7 @@ function AssistantView({
               <ReplyText
                 key={index}
                 text={block.text}
+                timestamp={message.timestamp}
                 imageUrl={imageUrl}
                 onReveal={onReveal}
               />
@@ -437,10 +450,13 @@ function AssistantView({
 /** Text of a reply, revealed letter by letter as it streams in. */
 function ReplyText({
   text,
+  timestamp,
   imageUrl,
   onReveal,
 }: {
   text: string;
+  /** When the message with the text was sent. */
+  timestamp: number;
   imageUrl: ImageUrl;
   onReveal: () => void;
 }) {
@@ -448,7 +464,56 @@ function ReplyText({
   useLayoutEffect(onReveal, [revealed.text, onReveal]);
   if (!revealed.text.trim()) return null;
   return (
-    <Markdown text={revealed.text} fade={revealed.fade} imageUrl={imageUrl} />
+    <div className={styles.reply} tabIndex={-1}>
+      <Markdown text={revealed.text} fade={revealed.fade} imageUrl={imageUrl} />
+      <div className={styles.footer}>
+        <CopyButton text={text} />
+        <MessageTime timestamp={timestamp} />
+      </div>
+    </div>
+  );
+}
+
+function MessageTime({ timestamp }: { timestamp: number }) {
+  return (
+    <time className={styles.time} dateTime={new Date(timestamp).toISOString()}>
+      {formatTime(timestamp)}
+    </time>
+  );
+}
+
+/** How long a copy button shows whether it copied. */
+const COPY_FEEDBACK_MS = 1500;
+
+function CopyButton({ text }: { text: string }) {
+  const [result, setResult] = useState<"copied" | "failed" | null>(null);
+  useEffect(() => {
+    if (!result) return;
+    const timer = setTimeout(() => setResult(null), COPY_FEEDBACK_MS);
+    return () => clearTimeout(timer);
+  }, [result]);
+  const label =
+    result === "copied"
+      ? "Copied"
+      : result === "failed"
+        ? "Couldn't copy"
+        : "Copy";
+  const Icon =
+    result === "copied" ? LuCheck : result === "failed" ? LuX : LuCopy;
+  return (
+    <IconButton
+      size="small"
+      aria-label={label}
+      title={label}
+      onClick={() =>
+        void copyText(text).then(
+          () => setResult("copied"),
+          () => setResult("failed"),
+        )
+      }
+    >
+      <Icon size={14} aria-hidden />
+    </IconButton>
   );
 }
 

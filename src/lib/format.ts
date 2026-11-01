@@ -15,3 +15,17 @@ export function formatDate(timestamp: number): string {
       date.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
   });
 }
+
+/** The time of day, after the day if it isn't today. */
+export function formatTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const today = date.toDateString() === now.toDateString();
+  return date.toLocaleString(undefined, {
+    month: today ? undefined : "short",
+    day: today ? undefined : "numeric",
+    year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
