@@ -7,6 +7,11 @@
   color: var(--text);
 }
 
+.large {
+  width: min(720px, calc(100vw - 32px));
+  height: min(560px, calc(100dvh - 32px));
+}
+
 .dialog::backdrop {
   background: rgb(0 0 0 / 0.35);
 }
@@ -18,7 +23,29 @@
   padding: 20px;
 }
 
+.large > .content {
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .content h2 {
   margin: 0;
   font-size: 18px;
+}
+
+.close {
+  margin: -4px -8px;
+}
+
+@media (max-width: 760px) {
+  .large {
+    width: calc(100vw - 32px);
+    height: calc(100dvh - 32px);
+  }
 }

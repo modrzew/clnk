@@ -1,4 +1,5 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useId, useState } from "react";
+import { LuBell, LuListCollapse, LuPlug, LuUserRound } from "react-icons/lu";
 import type { UserInfo } from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
 import { cx } from "../lib/cx";
@@ -19,6 +20,29 @@ import { McpServers } from "./McpServers";
 import styles from "./Settings.module.css";
 import ui from "./ui.module.css";
 
+const SECTIONS = (
+  [
+    { id: "account", label: "Account", Icon: LuUserRound },
+    { id: "mcp", label: "MCP servers", Icon: LuPlug },
+    { id: "notifications", label: "Notifications", Icon: LuBell },
+    { id: "display", label: "Display", Icon: LuListCollapse },
+  ] as const
+).filter(
+  // Left out where there are none to show, e.g. in the Android app.
+  (section) =>
+    section.id !== "notifications" || notificationSupport !== "unsupported",
+);
+
+type Section = (typeof SECTIONS)[number]["id"];
+
+const ARROW_STEPS: Partial<Record<string, number>> = {
+  ArrowUp: -1,
+  ArrowLeft: -1,
+  ArrowDown: 1,
+  ArrowRight: 1,
+};
+
+/** The settings, a section at a time: picked in a list beside it, or in tabs above it on narrow screens. */
 export function Settings({
   open,
   client,
@@ -32,60 +56,123 @@ export function Settings({
   onClose: () => void;
   onLogOut: () => void;
 }) {
+  const [section, setSection] = useState<Section>("account");
+  const baseId = useId();
+  const tabId = (tab: Section) => `${baseId}-${tab}`;
+  const panelId = `${baseId}-panel`;
+  const current = SECTIONS.find((each) => each.id === section);
+
+  // Arrow keys move between the tabs, which are a single stop for Tab.
+  function moveTab(event: KeyboardEvent) {
+    const step = ARROW_STEPS[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const index = SECTIONS.findIndex((each) => each.id === section);
+    const next = SECTIONS[(index + step + SECTIONS.length) % SECTIONS.length];
+    setSection(next.id);
+    document.getElementById(tabId(next.id))?.focus();
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Settings"
+      size="large"
+      closeButton
+    >
+      <div className={styles.body}>
+        <div
+          role="tablist"
+          aria-label="Sections"
+          className={styles.tabs}
+          onKeyDown={moveTab}
+        >
+          {SECTIONS.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={tabId(id)}
+              aria-selected={id === section}
+              aria-controls={id === section ? panelId : undefined}
+              tabIndex={id === section ? 0 : -1}
+              className={styles.tab}
+              onClick={(event) => {
+                setSection(id);
+                // Tabs scrolled partly out of view on narrow screens.
+                event.currentTarget.scrollIntoView({
+                  block: "nearest",
+                  inline: "nearest",
+                });
+              }}
+            >
+              <Icon size={16} aria-hidden />
+              {label}
+            </button>
+          ))}
+        </div>
+        <section
+          role="tabpanel"
+          id={panelId}
+          aria-labelledby={tabId(section)}
+          className={styles.panel}
+        >
+          <h3 className={styles.title}>{current?.label}</h3>
+          {section === "account" && (
+            <AccountSettings client={client} user={user} onLogOut={onLogOut} />
+          )}
+          {section === "mcp" && (
+            <>
+              <p className={styles.text}>
+                Tools Pi can use in your chats. Shared ones are set up on the
+                server for everyone, and signing in to one signs everyone in.
+                The ones you add are only yours.
+              </p>
+              {/* Fetched each time, since the shared ones come from a file on the server. */}
+              {open && <McpServers client={client} />}
+            </>
+          )}
+          {section === "notifications" && <NotificationSettings />}
+          {section === "display" && <DisplaySettings />}
+        </section>
+      </div>
+    </Dialog>
+  );
+}
+
+function DisplaySettings() {
   const prefs = useDisplayPrefs();
 
   return (
-    <Dialog open={open} onClose={onClose} title="Settings">
-      <AccountSettings client={client} user={user} onLogOut={onLogOut} />
-      <section className={styles.section}>
-        <h3 className={styles.heading}>MCP servers</h3>
-        <p className={styles.text}>
-          Tools Pi can use in your chats. Shared ones are set up on the server
-          for everyone, and signing in to one signs everyone in. The ones you
-          add are only yours.
-        </p>
-        {/* Fetched each time, since the shared ones come from a file on the server. */}
-        {open && <McpServers client={client} />}
-      </section>
-      {notificationSupport !== "unsupported" && <NotificationSettings />}
-      <section className={styles.section}>
-        <h3 className={styles.heading}>Display</h3>
-        <p className={styles.text}>
-          What's expanded in chats. Click any of it to expand or collapse it
-          anyway.
-        </p>
-        <div className={styles.settings}>
-          {OUTPUT_KINDS.map(({ kind, label, hint }) => (
-            <label key={kind} className={styles.setting}>
-              <span className={styles.settingText}>
-                <span className={styles.settingLabel}>{label}</span>
-                <span className={styles.settingHint}>{hint}</span>
-              </span>
-              <select
-                value={prefs[kind]}
-                onChange={(event) =>
-                  setExpandMode(kind, event.target.value as ExpandMode)
-                }
-              >
-                {EXPAND_MODES.map(({ mode, label }) => (
-                  <option key={mode} value={mode}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
-        </div>
-      </section>
-      <div className={styles.actions}>
-        <span className={styles.settingHint}>
-          Notifications and display are saved on this device.
-        </span>
-        <button type="button" className={ui.button} onClick={onClose}>
-          Done
-        </button>
+    <>
+      <p className={styles.text}>
+        What's expanded in chats. Click any of it to expand or collapse it
+        anyway. Saved on this device.
+      </p>
+      <div className={styles.settings}>
+        {OUTPUT_KINDS.map(({ kind, label, hint }) => (
+          <label key={kind} className={styles.setting}>
+            <span className={styles.settingText}>
+              <span className={styles.settingLabel}>{label}</span>
+              <span className={styles.settingHint}>{hint}</span>
+            </span>
+            <select
+              value={prefs[kind]}
+              onChange={(event) =>
+                setExpandMode(kind, event.target.value as ExpandMode)
+              }
+            >
+              {EXPAND_MODES.map(({ mode, label }) => (
+                <option key={mode} value={mode}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
       </div>
-    </Dialog>
+    </>
   );
 }
 
@@ -101,8 +188,8 @@ function NotificationSettings() {
   else if (blocked) hint = "Blocked in the browser's settings for this site";
 
   return (
-    <section className={styles.section}>
-      <h3 className={styles.heading}>Notifications</h3>
+    <>
+      <p className={styles.text}>Saved on this device.</p>
       <label className={styles.setting}>
         <span className={styles.settingText}>
           <span className={styles.settingLabel}>Chat finished</span>
@@ -118,7 +205,7 @@ function NotificationSettings() {
           }}
         />
       </label>
-    </section>
+    </>
   );
 }
 
@@ -135,8 +222,7 @@ function AccountSettings({
   const [changed, setChanged] = useState(false);
 
   return (
-    <section className={styles.section}>
-      <h3 className={styles.heading}>Account</h3>
+    <>
       <div className={styles.setting}>
         <span className={styles.settingText}>
           <span className={styles.settingLabel}>{user?.name}</span>
@@ -174,7 +260,7 @@ function AccountSettings({
           }}
         />
       )}
-    </section>
+    </>
   );
 }
 
