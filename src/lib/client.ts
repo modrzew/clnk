@@ -29,6 +29,7 @@ import {
 
 export type ConnectionStatus = "connecting" | "open" | "offline";
 
+const FIRST_RETRY_DELAY_MS = 100;
 const MAX_RETRY_DELAY_MS = 5000;
 
 /**
@@ -65,8 +66,7 @@ export class BackendClient {
     clearTimeout(this.retryTimer);
     window.removeEventListener("online", this.reconnectNow);
     document.removeEventListener("visibilitychange", this.reconnectNow);
-    this.ws?.close();
-    this.ws = null;
+    this.dropSocket();
   }
 
   onMessage(listener: (msg: ServerMessage) => void) {
@@ -261,7 +261,7 @@ export class BackendClient {
 
   private open() {
     if (this.closed) return;
-    this.setStatus(this.retries === 0 ? "connecting" : "offline");
+    if (this.status !== "offline") this.setStatus("connecting");
     const ws = new WebSocket(
       `${webSocketUrl(this.baseUrl)}?token=${encodeURIComponent(this.token)}`,
     );
@@ -285,6 +285,15 @@ export class BackendClient {
     };
   }
 
+  /** Closes the socket, if any, without its remaining events reaching this client. */
+  private dropSocket() {
+    const ws = this.ws;
+    this.ws = null;
+    if (!ws) return;
+    ws.onopen = ws.onmessage = ws.onclose = null;
+    ws.close();
+  }
+
   private unauthorized() {
     if (this.closed) return;
     this.close();
@@ -294,16 +303,28 @@ export class BackendClient {
   private scheduleReconnect() {
     if (this.closed) return;
     clearTimeout(this.retryTimer);
-    const delay = Math.min(500 * 2 ** this.retries, MAX_RETRY_DELAY_MS);
+    const delay = Math.min(
+      FIRST_RETRY_DELAY_MS * 2 ** this.retries,
+      MAX_RETRY_DELAY_MS,
+    );
     this.retries++;
     this.retryTimer = setTimeout(() => this.open(), delay);
   }
 
-  /** Mobile browsers drop sockets in the background; retry right away when the app comes back. */
+  /**
+   * Mobile browsers drop sockets in the background; retry right away when the app comes back. An attempt
+   * still in flight is replaced too: started while the network was suspended, it can hang until it times out.
+   */
   private reconnectNow = () => {
-    if (this.closed || this.ws || document.visibilityState !== "visible")
+    if (
+      this.closed ||
+      this.ws?.readyState === WebSocket.OPEN ||
+      document.visibilityState !== "visible"
+    )
       return;
     clearTimeout(this.retryTimer);
+    this.dropSocket();
+    this.retries = 0;
     this.open();
   };
 
