@@ -1363,9 +1363,10 @@ describe("backend", () => {
 
     // Projects come before chats on a new connection, so chats can be grouped right away.
     const late = await connect();
-    await late.waitFor(() => late.received.length >= 3);
-    expect(late.received.map((msg) => msg.type).slice(0, 3)).toEqual([
+    await late.waitFor(() => late.received.length >= 4);
+    expect(late.received.map((msg) => msg.type).slice(0, 4)).toEqual([
       "user",
+      "settings",
       "projects",
       "chats",
     ]);
@@ -1709,10 +1710,120 @@ describe("accounts", () => {
     await aliceClient.waitForStatus(chatId, "idle");
     expect(bobClient.received.map((msg) => msg.type)).toEqual([
       "user",
+      "settings",
       "projects",
       "chats",
       "error",
     ]);
+  });
+});
+
+describe("settings", () => {
+  const settingsOf = (client: { received: ServerMessage[] }) =>
+    client.received.findLast((msg) => msg.type === "settings")?.settings;
+
+  test("are sent on connecting, and only have what the user changed", async () => {
+    const { api, connect } = await setup();
+    const client = await connect();
+    await client.waitFor(() =>
+      client.received.some((msg) => msg.type === "chats"),
+    );
+    expect(client.received.map((msg) => msg.type)).toEqual([
+      "user",
+      "settings",
+      "projects",
+      "chats",
+    ]);
+    expect(settingsOf(client)).toEqual({});
+
+    expect(await api("/api/settings", patch({ theme: "dark" }))).toEqual({
+      status: 200,
+      body: { settings: { theme: "dark" } },
+    });
+    const later = await connect();
+    await later.waitFor(() => settingsOf(later) !== undefined);
+    expect(settingsOf(later)).toEqual({ theme: "dark" });
+  });
+
+  test("changes reach all of the user's devices, but no one else's", async () => {
+    const { api, connect, otherUser } = await setup();
+    const phone = await connect();
+    const laptop = await connect();
+    const bob = await otherUser("bob");
+    const bobClient = await bob.connect();
+    await bobClient.waitFor(() => settingsOf(bobClient) !== undefined);
+
+    await api("/api/settings", patch({ accent: "#123abc" }));
+    for (const client of [phone, laptop])
+      await client.waitFor(() => settingsOf(client)?.accent === "#123abc");
+
+    await bob.api("/api/settings", patch({ reads: "expanded" }));
+    await bobClient.waitFor(() => settingsOf(bobClient)?.reads === "expanded");
+    expect(settingsOf(bobClient)).toEqual({ reads: "expanded" });
+    expect(settingsOf(phone)).toEqual({ accent: "#123abc" });
+  });
+
+  test("a change that's slow to arrive doesn't undo one sent after it", async () => {
+    const { api } = await setup();
+    const encoder = new TextEncoder();
+    let finish = () => {};
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"theme":'));
+        finish = () => {
+          controller.enqueue(encoder.encode('"light"}'));
+          controller.close();
+        };
+      },
+    });
+    const slow = api("/api/settings", { method: "PATCH", body });
+    // Gives the server the time to start on it.
+    await Bun.sleep(20);
+
+    await api("/api/settings", patch({ accent: "#000000" }));
+    finish();
+    expect((await slow).body.settings).toEqual({
+      theme: "light",
+      accent: "#000000",
+    });
+  });
+
+  test("survive a restart", async () => {
+    const first = await setup({ onDisk: true });
+    await first.api("/api/settings", patch({ theme: "dark" }));
+    await first.stop();
+
+    const second = await setup({ restartOf: first });
+    const client = await TestClient.connect(
+      second.app,
+      (await login(second.app, "alice")).token,
+    );
+    await client.waitFor(() => settingsOf(client) !== undefined);
+    expect(settingsOf(client)).toEqual({ theme: "dark" });
+  });
+
+  test("validates requests", async () => {
+    const { api, app } = await setup();
+    await api("/api/settings", patch({ theme: "dark" }));
+    for (const invalid of [
+      { theme: "blue" },
+      { accent: "red" },
+      { accent: "#12345" },
+      { accent: 123 },
+      { thinking: "sometimes" },
+      // Nothing of a request is taken when any of it is wrong.
+      { theme: "light", tools: "nope" },
+    ]) {
+      expect((await api("/api/settings", patch(invalid))).status).toBe(400);
+    }
+    const { body } = await api(
+      "/api/settings",
+      patch({ fontSize: 12, constructor: "x", __proto__: "y" }),
+    );
+    expect(body.settings).toEqual({ theme: "dark" });
+    expect(
+      (await request(app, "/api/settings", patch({ theme: "light" }))).status,
+    ).toBe(401);
   });
 });
 

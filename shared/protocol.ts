@@ -154,6 +154,25 @@ export interface UserInfo {
   name: string;
 }
 
+/** When a kind of output in the transcript is expanded, until it's toggled by hand. */
+export type ExpandMode = "expanded" | "running" | "collapsed";
+
+export type OutputKind =
+  "thinking" | "commands" | "changes" | "reads" | "tools";
+
+export type Theme = "system" | "light" | "dark";
+
+/**
+ * How the UI looks, the same on all of a user's devices: how each kind of output is expanded, and the
+ * colours. The backend only has the fields the user changed, so they come as `Partial<UserSettings>`,
+ * and the defaults are up to the client.
+ */
+export interface UserSettings extends Record<OutputKind, ExpandMode> {
+  theme: Theme;
+  /** As `#rrggbb`. */
+  accent: string;
+}
+
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -248,6 +267,13 @@ export interface LoginResponse {
 export interface ChangePasswordRequest {
   current: string;
   password: string;
+}
+
+/** PATCH /api/settings: any subset of the fields. The others stay as they are. */
+export type UpdateSettingsRequest = Partial<UserSettings>;
+
+export interface UpdateSettingsResponse {
+  settings: Partial<UserSettings>;
 }
 
 /** GET /api/models */
@@ -427,7 +453,12 @@ export type ClientMessage =
 export type ServerMessage =
   /** First message on every connection: who is logged in. */
   | { type: "user"; user: UserInfo }
-  /** Sent right after `user` on every connection: all of the user's projects. */
+  /**
+   * Sent right after `user` on every connection, and to every connected client of the user when their
+   * settings change.
+   */
+  | { type: "settings"; settings: Partial<UserSettings> }
+  /** Sent right after `settings` on every connection: all of the user's projects. */
   | { type: "projects"; projects: ProjectSummary[] }
   /** Sent right after `projects` on every connection: all of the user's chats. */
   | { type: "chats"; chats: ChatSummary[] }

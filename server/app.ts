@@ -24,9 +24,12 @@ import {
   type UpdateChatResponse,
   type UpdateProjectRequest,
   type UpdateProjectResponse,
+  type UpdateSettingsRequest,
+  type UpdateSettingsResponse,
   type UploadArtefactResponse,
   type UserInfo,
 } from "../shared/protocol";
+import { SETTING_CHECKS, validSettings } from "../shared/settings";
 import { AuthService, type Session } from "./auth";
 import {
   ChatService,
@@ -164,6 +167,14 @@ export function startApp({
         (s) => s.user.id === userId && s.tokenHash !== session.tokenHash,
       );
       return json({ ok: true });
+    }
+    if (path === "/api/settings" && method === "PATCH") {
+      const changes = parseSettings(await readJson(req));
+      // Nothing to wait for from here on, so that changes sent at the same time all count.
+      const settings = { ...db.getSettings(userId), ...changes };
+      db.setSettings(userId, settings);
+      publish(userTopic(userId), { type: "settings", settings });
+      return json({ settings } satisfies UpdateSettingsResponse);
     }
     if (path === "/api/models" && method === "GET")
       return json(await listModels(pi));
@@ -370,6 +381,7 @@ export function startApp({
         sockets.add(ws);
         const userId = session.user.id;
         send(ws, { type: "user", user: userInfo(session.user) });
+        send(ws, { type: "settings", settings: db.getSettings(userId) });
         send(ws, { type: "projects", projects: projects.listProjects(userId) });
         send(ws, { type: "chats", chats: chats.listChats(userId) });
         ws.subscribe(userTopic(userId));
@@ -505,6 +517,14 @@ function parseProjectUpdate(
     update.archived = body.archived;
   }
   return update;
+}
+
+function parseSettings(body: Record<string, unknown>): UpdateSettingsRequest {
+  for (const [key, valid] of Object.entries(SETTING_CHECKS)) {
+    if (body[key] !== undefined && !valid(body[key]))
+      throw new HttpError(400, `${key} isn't a valid value`);
+  }
+  return validSettings(body);
 }
 
 function parseRewind(body: Record<string, unknown>): RewindRequest {

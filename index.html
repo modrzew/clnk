@@ -10,9 +10,11 @@
     <title>clnk</title>
     <script>
       // The colours arrive with the app. Until then the page shouldn't flash the system's theme.
-      const theme = localStorage.getItem("clnk.theme");
-      if (theme === "light" || theme === "dark")
-        document.documentElement.style.colorScheme = theme;
+      try {
+        const { theme } = JSON.parse(localStorage.getItem("clnk.settings"));
+        if (theme === "light" || theme === "dark")
+          document.documentElement.style.colorScheme = theme;
+      } catch {}
     </script>
   </head>
 

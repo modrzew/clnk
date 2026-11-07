@@ -14,7 +14,7 @@ export const notificationSupport: "supported" | "insecure" | "unsupported" =
       ? "insecure"
       : "unsupported";
 
-// Per device, like the display preferences.
+// Per device, as each one needs the browser's permission.
 const STORAGE_KEY = "clnk.notifications";
 const listeners = new Set<() => void>();
 let enabled = load();

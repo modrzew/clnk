@@ -6,7 +6,7 @@ import {
   LuPlug,
   LuUserRound,
 } from "react-icons/lu";
-import type { UserInfo } from "../../shared/protocol";
+import type { ExpandMode, Theme, UserInfo } from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
 import {
   notificationSupport,
@@ -14,20 +14,9 @@ import {
   useNotificationsEnabled,
 } from "../lib/notifications";
 import { DEFAULT_ACCENT } from "../lib/palette";
-import {
-  EXPAND_MODES,
-  type ExpandMode,
-  OUTPUT_KINDS,
-  setExpandMode,
-  useDisplayPrefs,
-} from "../lib/prefs";
-import {
-  setAccent,
-  setTheme,
-  type Theme,
-  THEMES,
-  useAppearance,
-} from "../lib/theme";
+import { EXPAND_MODES, OUTPUT_KINDS, setExpandMode } from "../lib/prefs";
+import { useSettings } from "../lib/settings";
+import { setAccent, setTheme, THEMES } from "../lib/theme";
 import { Button, LinkButton } from "./Button";
 import { Dialog } from "./Dialog";
 import { ErrorMessage } from "./ErrorMessage";
@@ -158,11 +147,11 @@ export function Settings({
 }
 
 function AppearanceSettings() {
-  const { theme, accent } = useAppearance();
+  const { theme, accent } = useSettings();
 
   return (
     <>
-      <p className={styles.text}>Saved on this device.</p>
+      <p className={styles.text}>The same on all your devices.</p>
       <div className={styles.settings}>
         <label className={styles.setting}>
           <span className={styles.settingText}>
@@ -210,13 +199,13 @@ function AppearanceSettings() {
 }
 
 function DisplaySettings() {
-  const prefs = useDisplayPrefs();
+  const settings = useSettings();
 
   return (
     <>
       <p className={styles.text}>
         What's expanded in chats. Click any of it to expand or collapse it
-        anyway. Saved on this device.
+        anyway. The same on all your devices.
       </p>
       <div className={styles.settings}>
         {OUTPUT_KINDS.map(({ kind, label, hint }) => (
@@ -226,7 +215,7 @@ function DisplaySettings() {
               <span className={styles.settingHint}>{hint}</span>
             </span>
             <select
-              value={prefs[kind]}
+              value={settings[kind]}
               onChange={(event) =>
                 setExpandMode(kind, event.target.value as ExpandMode)
               }
