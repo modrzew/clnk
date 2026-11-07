@@ -3,6 +3,7 @@ import type { ModelRef, ModelsResponse } from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
 import { type Models, navigate } from "../lib/hooks";
 import { modelKey } from "../lib/models";
+import { ChatBackground } from "./ChatBackground";
 import { Composer } from "./Composer";
 import { ErrorMessage } from "./ErrorMessage";
 import { Header } from "./Header";
@@ -23,10 +24,12 @@ export function NewChat({
   return (
     <>
       <Header title="New chat" onMenu={onMenu} />
-      <div className={styles.newChat}>
-        <h2>What should Pi do?</h2>
-      </div>
-      <NewChatComposer client={client} models={models} />
+      <ChatBackground>
+        <div className={styles.newChat}>
+          <h2>What should Pi do?</h2>
+        </div>
+        <NewChatComposer client={client} models={models} />
+      </ChatBackground>
     </>
   );
 }

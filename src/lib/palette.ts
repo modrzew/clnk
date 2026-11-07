@@ -14,6 +14,7 @@ interface Oklch {
 const NEUTRALS: Record<Scheme, Record<string, number>> = {
   light: {
     "--bg": 0.988,
+    "--pattern": 0.962,
     "--bg-sidebar": 0.958,
     "--bg-raised": 1,
     "--bg-user": 0.94,
@@ -26,6 +27,7 @@ const NEUTRALS: Record<Scheme, Record<string, number>> = {
   },
   dark: {
     "--bg": 0.225,
+    "--pattern": 0.262,
     "--bg-sidebar": 0.199,
     "--bg-raised": 0.263,
     "--bg-user": 0.298,

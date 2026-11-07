@@ -13,3 +13,7 @@ For more details see [docs/overview.md](docs/overview.md).
 - chat with a self hosted model via OpenAI compatible API and Pi
 - projects, with artefacts and chats grouped under them
 - web, desktop (MacOS) and mobile (Android)
+
+## Attributions
+
+**Chat background image**: Floating Cogs from [Hero Patterns](https://heropatterns.com/) by Steve Schoger, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)

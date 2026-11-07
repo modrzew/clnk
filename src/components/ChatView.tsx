@@ -9,6 +9,7 @@ import type { BackendClient } from "../lib/client";
 import { routeHref, useTranscript } from "../lib/hooks";
 import { modelKey } from "../lib/models";
 import { IconButton, LinkButton } from "./Button";
+import { ChatBackground } from "./ChatBackground";
 import styles from "./ChatView.module.css";
 import { Composer } from "./Composer";
 import { ContextMeter } from "./ContextMeter";
@@ -108,67 +109,71 @@ export function ChatView({
           </IconButton>
         )}
       </Header>
-      {transcript.loaded ? (
-        <Transcript
-          transcript={transcript}
-          running={running}
-          attachmentUrl={attachmentUrl}
-          imageUrl={imageUrl}
-          onRewind={running || archived || projectArchived ? undefined : rewind}
-        />
-      ) : (
-        <div className={styles.empty}>
-          <Spinner />
-        </div>
-      )}
-      {transcript.error && (
-        <ErrorMessage variant="banner">{transcript.error}</ErrorMessage>
-      )}
-      {actionError && (
-        <ErrorMessage variant="banner">{actionError}</ErrorMessage>
-      )}
-      {projectArchived ? (
-        <div className={styles.archivedNotice}>
-          This chat's project is archived.{" "}
-          <LinkButton inline onClick={unarchiveProject}>
-            Unarchive the project
-          </LinkButton>{" "}
-          to continue.
-        </div>
-      ) : archived ? (
-        <div className={styles.archivedNotice}>
-          This chat is archived.{" "}
-          <LinkButton inline onClick={() => setArchived(false)}>
-            Unarchive it
-          </LinkButton>{" "}
-          to continue.
-        </div>
-      ) : (
-        <Composer
-          key={chatId}
-          running={running}
-          autoFocus
-          seesImages={model?.images}
-          onSend={(text, files) =>
-            client.sendMessage(chatId, text, files).then(() => {})
-          }
-          onStop={() => client.abort(chatId).then(({ queued }) => queued)}
-        >
-          {chat &&
-            (models.length > 0 ? (
-              <ModelSelect
-                models={models}
-                value={chat.model}
-                onChange={(model) =>
-                  act(() => client.updateChat(chatId, { model }))
-                }
-              />
-            ) : (
-              <ModelLabel model={chat.model} />
-            ))}
-          <ContextMeter context={chat?.context ?? null} />
-        </Composer>
-      )}
+      <ChatBackground>
+        {transcript.loaded ? (
+          <Transcript
+            transcript={transcript}
+            running={running}
+            attachmentUrl={attachmentUrl}
+            imageUrl={imageUrl}
+            onRewind={
+              running || archived || projectArchived ? undefined : rewind
+            }
+          />
+        ) : (
+          <div className={styles.empty}>
+            <Spinner />
+          </div>
+        )}
+        {transcript.error && (
+          <ErrorMessage variant="banner">{transcript.error}</ErrorMessage>
+        )}
+        {actionError && (
+          <ErrorMessage variant="banner">{actionError}</ErrorMessage>
+        )}
+        {projectArchived ? (
+          <div className={styles.archivedNotice}>
+            This chat's project is archived.{" "}
+            <LinkButton inline onClick={unarchiveProject}>
+              Unarchive the project
+            </LinkButton>{" "}
+            to continue.
+          </div>
+        ) : archived ? (
+          <div className={styles.archivedNotice}>
+            This chat is archived.{" "}
+            <LinkButton inline onClick={() => setArchived(false)}>
+              Unarchive it
+            </LinkButton>{" "}
+            to continue.
+          </div>
+        ) : (
+          <Composer
+            key={chatId}
+            running={running}
+            autoFocus
+            seesImages={model?.images}
+            onSend={(text, files) =>
+              client.sendMessage(chatId, text, files).then(() => {})
+            }
+            onStop={() => client.abort(chatId).then(({ queued }) => queued)}
+          >
+            {chat &&
+              (models.length > 0 ? (
+                <ModelSelect
+                  models={models}
+                  value={chat.model}
+                  onChange={(model) =>
+                    act(() => client.updateChat(chatId, { model }))
+                  }
+                />
+              ) : (
+                <ModelLabel model={chat.model} />
+              ))}
+            <ContextMeter context={chat?.context ?? null} />
+          </Composer>
+        )}
+      </ChatBackground>
     </>
   );
 }
