@@ -24,6 +24,8 @@ import {
   type UpdateMcpServerRequest,
   type UpdateProjectRequest,
   type UpdateProjectResponse,
+  type UpdateSettingsRequest,
+  type UpdateSettingsResponse,
   type UploadArtefactResponse,
 } from "../../shared/protocol";
 
@@ -131,6 +133,13 @@ export class BackendClient {
   changePassword(body: ChangePasswordRequest) {
     return this.request("/api/auth/password", {
       method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  updateSettings(body: UpdateSettingsRequest) {
+    return this.request<UpdateSettingsResponse>("/api/settings", {
+      method: "PATCH",
       body: JSON.stringify(body),
     });
   }

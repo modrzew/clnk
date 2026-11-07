@@ -19,6 +19,7 @@ import {
   useUser,
 } from "./lib/hooks";
 import { useChatNotifications } from "./lib/notifications";
+import { syncSettings } from "./lib/settings";
 import { useUpdateCheck } from "./lib/updates";
 import styles from "./App.module.css";
 
@@ -103,6 +104,7 @@ function Shell({
     client.connect();
     return () => client.close();
   }, [client]);
+  useEffect(() => syncSettings(client), [client]);
 
   const connection = useConnectionStatus(client);
   const user = useUser(client);

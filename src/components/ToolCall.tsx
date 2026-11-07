@@ -1,12 +1,13 @@
 import { useLayoutEffect, useRef } from "react";
 import type {
   ImageContent,
+  OutputKind,
   TextContent,
   ToolCall,
   ToolResultMessage,
 } from "../../shared/protocol";
 import { cx } from "../lib/cx";
-import { type OutputKind, useExpandable } from "../lib/prefs";
+import { useExpandable } from "../lib/prefs";
 import styles from "./ToolCall.module.css";
 
 interface ToolCallViewProps {

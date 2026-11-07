@@ -3,6 +3,7 @@ import type {
   ContextUsage,
   McpServerConfig,
   ModelRef,
+  UserSettings,
 } from "../shared/protocol";
 
 export interface UserRow {
@@ -142,6 +143,7 @@ const MIGRATIONS = [
     state TEXT NOT NULL,
     PRIMARY KEY (owner, key)
   );`,
+  `ALTER TABLE users ADD COLUMN settings TEXT NOT NULL DEFAULT '{}';`,
 ];
 
 export class Db {
@@ -191,6 +193,19 @@ export class Db {
     this.db
       .query("UPDATE users SET password_hash = ? WHERE id = ?")
       .run(passwordHash, userId);
+  }
+
+  getSettings(userId: string): Partial<UserSettings> {
+    const { settings } = this.db
+      .query("SELECT settings FROM users WHERE id = ?")
+      .get(userId) as { settings: string };
+    return JSON.parse(settings) as Partial<UserSettings>;
+  }
+
+  setSettings(userId: string, settings: Partial<UserSettings>) {
+    this.db
+      .query("UPDATE users SET settings = ? WHERE id = ?")
+      .run(JSON.stringify(settings), userId);
   }
 
   insertSession(tokenHash: string, userId: string, createdAt = Date.now()) {
