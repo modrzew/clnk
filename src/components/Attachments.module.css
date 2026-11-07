@@ -90,7 +90,7 @@
 }
 
 .lightbox::backdrop {
-  background: rgb(0 0 0 / 0.8);
+  background: var(--scrim-strong);
 }
 
 .lightbox img {

@@ -1,5 +1,11 @@
 import { type FormEvent, type KeyboardEvent, useId, useState } from "react";
-import { LuBell, LuListCollapse, LuPlug, LuUserRound } from "react-icons/lu";
+import {
+  LuBell,
+  LuListCollapse,
+  LuPalette,
+  LuPlug,
+  LuUserRound,
+} from "react-icons/lu";
 import type { UserInfo } from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
 import {
@@ -7,6 +13,7 @@ import {
   setNotificationsEnabled,
   useNotificationsEnabled,
 } from "../lib/notifications";
+import { DEFAULT_ACCENT } from "../lib/palette";
 import {
   EXPAND_MODES,
   type ExpandMode,
@@ -14,6 +21,13 @@ import {
   setExpandMode,
   useDisplayPrefs,
 } from "../lib/prefs";
+import {
+  setAccent,
+  setTheme,
+  type Theme,
+  THEMES,
+  useAppearance,
+} from "../lib/theme";
 import { Button, LinkButton } from "./Button";
 import { Dialog } from "./Dialog";
 import { ErrorMessage } from "./ErrorMessage";
@@ -25,6 +39,7 @@ const SECTIONS = (
     { id: "account", label: "Account", Icon: LuUserRound },
     { id: "mcp", label: "MCP servers", Icon: LuPlug },
     { id: "notifications", label: "Notifications", Icon: LuBell },
+    { id: "appearance", label: "Appearance", Icon: LuPalette },
     { id: "display", label: "Display", Icon: LuListCollapse },
   ] as const
 ).filter(
@@ -134,10 +149,63 @@ export function Settings({
             </>
           )}
           {section === "notifications" && <NotificationSettings />}
+          {section === "appearance" && <AppearanceSettings />}
           {section === "display" && <DisplaySettings />}
         </section>
       </div>
     </Dialog>
+  );
+}
+
+function AppearanceSettings() {
+  const { theme, accent } = useAppearance();
+
+  return (
+    <>
+      <p className={styles.text}>Saved on this device.</p>
+      <div className={styles.settings}>
+        <label className={styles.setting}>
+          <span className={styles.settingText}>
+            <span className={styles.settingLabel}>Theme</span>
+            <span className={styles.settingHint}>
+              System follows this device's setting
+            </span>
+          </span>
+          <select
+            value={theme}
+            onChange={(event) => setTheme(event.target.value as Theme)}
+          >
+            {THEMES.map(({ theme, label }) => (
+              <option key={theme} value={theme}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className={styles.setting}>
+          <span className={styles.settingText}>
+            <span className={styles.settingLabel}>Accent colour</span>
+            <span className={styles.settingHint}>
+              All the app's colours are derived from it, and it's adjusted where
+              it would be hard to read
+            </span>
+          </span>
+          <span className={styles.settingActions}>
+            {accent !== DEFAULT_ACCENT && (
+              <LinkButton onClick={() => setAccent(DEFAULT_ACCENT)}>
+                Reset
+              </LinkButton>
+            )}
+            <input
+              type="color"
+              aria-label="Accent colour"
+              value={accent}
+              onChange={(event) => setAccent(event.target.value)}
+            />
+          </span>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -232,7 +300,7 @@ function AccountSettings({
               : "Logged in on this device"}
           </span>
         </span>
-        <span className={styles.accountActions}>
+        <span className={styles.settingActions}>
           {!changing && (
             <LinkButton onClick={() => setChanging(true)}>
               Change password

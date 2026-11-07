@@ -2,11 +2,16 @@ package dev.hotarubi.clnk
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
@@ -33,6 +38,26 @@ class MainActivity : TauriActivity() {
       checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED
     ) {
       requestPermissions(arrayOf(Manifest.permission.ACCESS_LOCAL_NETWORK), 0)
+    }
+  }
+
+  override fun onWebViewCreate(webView: WebView) {
+    webView.addJavascriptInterface(SystemBars(), "clnkSystemBars")
+  }
+
+  // The system bars are outside the page, and its theme needn't be the system's. The page calls this so
+  // the window behind them shows its background, with icons readable on it. R8 keeps it by a rule in
+  // proguard-rules.pro.
+  inner class SystemBars {
+    @JavascriptInterface
+    fun update(background: String, dark: Boolean) {
+      runOnUiThread {
+        window.setBackgroundDrawable(ColorDrawable(Color.parseColor(background)))
+        WindowCompat.getInsetsController(window, window.decorView).run {
+          isAppearanceLightStatusBars = !dark
+          isAppearanceLightNavigationBars = !dark
+        }
+      }
     }
   }
 }

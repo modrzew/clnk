@@ -252,7 +252,7 @@
     position: fixed;
     inset: 0;
     z-index: 10;
-    background: rgb(0 0 0 / 0.35);
+    background: var(--scrim);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;

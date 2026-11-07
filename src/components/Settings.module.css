@@ -113,7 +113,17 @@
   font-size: 14px;
 }
 
-.accountActions {
+.setting input[type="color"] {
+  flex-shrink: 0;
+  width: 44px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+}
+
+.settingActions {
   display: flex;
   align-items: center;
   gap: 12px;

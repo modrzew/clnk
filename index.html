@@ -8,6 +8,12 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <title>clnk</title>
+    <script>
+      // The colours arrive with the app. Until then the page shouldn't flash the system's theme.
+      const theme = localStorage.getItem("clnk.theme");
+      if (theme === "light" || theme === "dark")
+        document.documentElement.style.colorScheme = theme;
+    </script>
   </head>
 
   <body>
