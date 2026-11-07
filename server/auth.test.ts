@@ -1,8 +1,16 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import {
+  afterEach,
+  describe,
+  expect,
+  setSystemTime,
+  spyOn,
+  test,
+} from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthService } from "./auth";
+import type { HttpError } from "./chats";
 import { Db } from "./db";
 
 const cleanup: (() => void)[] = [];
@@ -57,5 +65,115 @@ describe("accounts", () => {
     expect(auth.authenticate(token)).toBeNull();
     const { token: next } = await auth.login("alice", "better");
     expect(auth.authenticate(next)?.user.name).toBe("alice");
+  });
+});
+
+describe("failed logins", () => {
+  const START = new Date("2026-01-01T00:00:00Z").getTime();
+
+  /** Fails `count` times, five being what a name gets before it has to wait. */
+  function fail(auth: AuthService, name: string, count = 5) {
+    for (let i = 0; i < count; i++)
+      expect(auth.login(name, "wrong")).rejects.toThrow(
+        "Wrong name or password",
+      );
+  }
+
+  function setupAtStart() {
+    setSystemTime(START);
+    cleanup.push(() => setSystemTime());
+    return setup();
+  }
+
+  test("make a name wait longer and longer, even with the right password", async () => {
+    const { auth } = setupAtStart();
+    await auth.createUser("alice", "secret");
+    fail(auth, "alice");
+    expect(auth.login("alice", "secret")).rejects.toMatchObject({
+      status: 429,
+      message: "Too many failed logins. Try again in 1 s.",
+    });
+
+    setSystemTime(START + 1000);
+    fail(auth, "alice", 1);
+    expect(auth.login("alice", "secret")).rejects.toMatchObject({
+      status: 429,
+      message: "Too many failed logins. Try again in 2 s.",
+    });
+    // Waiting logins don't make it longer.
+    setSystemTime(START + 2999);
+    expect(auth.login("alice", "wrong")).rejects.toMatchObject({
+      status: 429,
+    });
+    setSystemTime(START + 3000);
+    expect((await auth.login("alice", "secret")).user.name).toBe("alice");
+  });
+
+  test("are forgotten after logging in, and after an hour", async () => {
+    const { auth } = setupAtStart();
+    await auth.createUser("alice", "secret");
+    fail(auth, "alice", 4);
+    await auth.login("alice", "secret");
+    fail(auth, "alice");
+
+    setSystemTime(START + 60 * 60_000);
+    fail(auth, "alice");
+  });
+
+  test("count the same for every spelling of a name, and only for that name", async () => {
+    const { auth } = setupAtStart();
+    await auth.createUser("alice", "secret");
+    await auth.createUser("bob", "secret");
+    fail(auth, "alice", 2);
+    fail(auth, " ALICE ", 3);
+    expect(auth.login("Alice", "secret")).rejects.toMatchObject({
+      status: 429,
+    });
+    await auth.login("bob", "secret");
+  });
+
+  test("treat names without an account like names with one", async () => {
+    const { auth } = setupAtStart();
+    await auth.createUser("alice", "secret");
+    const verify = spyOn(Bun.password, "verify");
+    cleanup.push(() => verify.mockRestore());
+    fail(auth, "nobody");
+    expect(verify).toHaveBeenCalledTimes(5);
+    expect(auth.login("nobody", "wrong")).rejects.toMatchObject({
+      status: 429,
+    });
+  });
+
+  test("can't be raced past with parallel guesses", async () => {
+    const { auth } = setupAtStart();
+    await auth.createUser("alice", "secret");
+    fail(auth, "alice", 4);
+    const results = await Promise.allSettled(
+      [1, 2, 3].map(() => auth.login("alice", "wrong")),
+    );
+    expect(
+      results.map((result) =>
+        result.status === "rejected"
+          ? (result.reason as HttpError).status
+          : 200,
+      ),
+    ).toEqual([401, 429, 429]);
+  });
+
+  test("only run a few at a time", async () => {
+    const { auth } = setupAtStart();
+    await auth.createUser("alice", "secret");
+    const results = await Promise.allSettled(
+      ["a", "b", "c", "d", "e"].map((name) => auth.login(name, "wrong")),
+    );
+    expect(
+      results.map((result) =>
+        result.status === "rejected"
+          ? (result.reason as HttpError).status
+          : 200,
+      ),
+    ).toEqual([401, 401, 401, 401, 429]);
+    // A login turned away for that isn't held against the name.
+    fail(auth, "e");
   });
 });

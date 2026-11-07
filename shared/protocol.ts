@@ -224,7 +224,10 @@ export interface HealthResponse {
   version: string;
 }
 
-/** POST /api/auth/login. Accounts are created on the server, with `bun users add <name>`. */
+/**
+ * POST /api/auth/login. Accounts are created on the server, with `bun users add <name>`. 429 when a name
+ * failed too many times and has to wait, or when too many logins are running.
+ */
 export interface LoginRequest {
   name: string;
   password: string;
