@@ -39,28 +39,26 @@ function distance(a: string, b: string) {
   );
 }
 
-/** Text and what it's shown on across the UI, with the contrast it needs. */
+/**
+ * Text and what it's shown on across the UI, with the contrast it needs. Not --pattern: text over it
+ * glows in --bg, which clears the pattern from around it.
+ */
 const PAIRS: [text: string, background: string, ratio: number][] = [
   ["--text", "--bg", 7],
-  ["--text", "--pattern", 7],
   ["--text", "--bg-sidebar", 7],
   ["--text", "--bg-raised", 7],
   ["--text", "--bg-user", 7],
   ["--text", "--bg-hover", 7],
   ["--text", "--code-bg", 7],
   ["--text-muted", "--bg", 4.5],
-  ["--text-muted", "--pattern", 4.5],
   ["--text-muted", "--bg-raised", 4.5],
   ["--accent", "--bg", 4.5],
-  ["--accent", "--pattern", 4.5],
   ["--accent", "--bg-raised", 4.5],
   ["--accent-text", "--accent", 4.5],
   ["--bg-raised", "--danger", 4.5],
   ["--danger", "--bg", 4.5],
-  ["--danger", "--pattern", 4.5],
   ["--danger", "--danger-bg", 4.5],
   ["--warn", "--bg", 4.5],
-  ["--warn", "--pattern", 4.5],
   ["--diff-add", "--diff-add-bg", 4.5],
   ["--diff-del", "--diff-del-bg", 4.5],
 ];
@@ -92,12 +90,17 @@ describe("palette", () => {
     expect(palette("#7fd1ff", "dark")["--accent"]).toBe("#7fd1ff");
   });
 
-  test("tints the neutrals with the accent", () => {
-    const red = palette("#d0342c", "light");
-    const blue = palette("#2c5fd0", "light");
-    expect(red["--bg-hover"]).not.toBe(blue["--bg-hover"]);
-    // A grey accent has no hue to give them.
-    expect(palette("#808080", "light")["--bg-hover"]).toMatch(/^#(..)\1\1$/);
+  test("keeps the greys whatever the accent", () => {
+    for (const scheme of SCHEMES) {
+      const red = palette("#d0342c", scheme);
+      const blue = palette("#2c5fd0", scheme);
+      for (const name of ["--bg", "--pattern", "--bg-hover", "--text"])
+        expect(red[name]).toBe(blue[name]);
+    }
+    // Except the text on the accent, which goes with it.
+    const red = palette("#d0342c", "dark");
+    const blue = palette("#2c5fd0", "dark");
+    expect(red["--accent-text"]).not.toBe(blue["--accent-text"]);
   });
 
   test("scales the signal colours with the accent but keeps them apart", () => {

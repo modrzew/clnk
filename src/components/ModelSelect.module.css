@@ -14,4 +14,5 @@
 .select:focus-visible {
   background: var(--bg-hover);
   color: var(--text);
+  text-shadow: none;
 }

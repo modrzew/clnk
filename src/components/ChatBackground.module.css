@@ -1,3 +1,7 @@
+/*
+ * Text over the pattern glows in the background's colour, which clears the pattern from around it.
+ * Whatever has a background of its own turns the glow off, or it would show as a smudge there.
+ */
 .background {
   position: relative;
   isolation: isolate;
@@ -5,6 +9,11 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  text-shadow:
+    0 0 4px var(--bg),
+    0 0 8px var(--bg),
+    0 0 16px var(--bg),
+    0 0 16px var(--bg);
 }
 
 /* The tile is a mask, so the pattern takes its colour from the palette. */

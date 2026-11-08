@@ -55,12 +55,14 @@
   padding: 0.1em 0.35em;
   border-radius: 4px;
   background: var(--code-bg);
+  text-shadow: none;
 }
 
 .markdown pre {
   padding: 12px 14px;
   border-radius: 8px;
   background: var(--code-bg);
+  text-shadow: none;
   overflow-x: auto;
 }
 

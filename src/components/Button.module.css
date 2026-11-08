@@ -8,6 +8,7 @@
   border-radius: 8px;
   background: var(--accent);
   color: var(--accent-text);
+  text-shadow: none;
   font-size: 14px;
   font-weight: 600;
 }

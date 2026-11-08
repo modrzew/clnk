@@ -54,6 +54,7 @@
   border-radius: 10px;
   background: var(--bg-raised);
   color: var(--text);
+  text-shadow: none;
   font-size: 14px;
   text-decoration: none;
 }
