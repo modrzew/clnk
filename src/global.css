@@ -1,6 +1,6 @@
 /* These globals are in a cascade layer, so component CSS modules, which are unlayered, override them whatever the import order. */
 @layer base {
-  /* The colours are set on this element by src/lib/theme.ts, all derived from the accent in src/lib/palette.ts. */
+  /* The colours are set on this element by src/lib/theme.ts, from the palette in src/lib/palette.ts. */
   :root {
     --radius: 12px;
     --sidebar-width: 272px;

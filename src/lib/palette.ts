@@ -10,11 +10,14 @@ interface Oklch {
   h: number;
 }
 
-/** Lightness of the greys, which take the accent's hue and a little of its chroma. */
+/**
+ * Lightness of the greys, which take a trace of the default accent's hue whatever the user picks, so
+ * the backgrounds look the same under any accent.
+ */
 const NEUTRALS: Record<Scheme, Record<string, number>> = {
   light: {
     "--bg": 0.988,
-    "--pattern": 0.962,
+    "--pattern": 0.935,
     "--bg-sidebar": 0.958,
     "--bg-raised": 1,
     "--bg-user": 0.94,
@@ -22,12 +25,11 @@ const NEUTRALS: Record<Scheme, Record<string, number>> = {
     "--border": 0.894,
     "--text": 0.23,
     "--text-muted": 0.531,
-    "--accent-text": 1,
     "--code-bg": 0.949,
   },
   dark: {
     "--bg": 0.225,
-    "--pattern": 0.262,
+    "--pattern": 0.27,
     "--bg-sidebar": 0.199,
     "--bg-raised": 0.263,
     "--bg-user": 0.298,
@@ -35,7 +37,6 @@ const NEUTRALS: Record<Scheme, Record<string, number>> = {
     "--border": 0.334,
     "--text": 0.924,
     "--text-muted": 0.685,
-    "--accent-text": 0.206,
     "--code-bg": 0.274,
   },
 };
@@ -69,6 +70,8 @@ const SIGNALS: Record<Scheme, Record<string, Oklch>> = {
 
 /** The most a light scheme's accent may be, and the least a dark scheme's, to stay readable. */
 const ACCENT_LIGHTNESS: Record<Scheme, number> = { light: 0.52, dark: 0.73 };
+/** Text on the accent, a grey tinted by the accent rather than the default one. */
+const ACCENT_TEXT_LIGHTNESS: Record<Scheme, number> = { light: 1, dark: 0.206 };
 const SCRIM_LIGHTNESS = 0.15;
 
 /** Every colour of the UI as CSS custom properties, from the accent as `#rrggbb`. */
@@ -77,24 +80,31 @@ export function palette(
   scheme: Scheme,
 ): Record<string, string> {
   const base = fromHex(accent);
-  const neutralChroma = Math.min(base.c, 0.15) * 0.08;
-  const signalScale = clamp(base.c / fromHex(DEFAULT_ACCENT).c, 0.7, 1.3);
+  const original = fromHex(DEFAULT_ACCENT);
+  const neutral = tint(original);
+  const signalScale = clamp(base.c / original.c, 0.7, 1.3);
   const limit = ACCENT_LIGHTNESS[scheme];
-  const scrim = toHex({ ...base, l: SCRIM_LIGHTNESS, c: neutralChroma });
+  const scrim = toHex({ ...neutral, l: SCRIM_LIGHTNESS });
 
   const colours: Record<string, string> = {
     "--accent": toHex({
       ...base,
       l: scheme === "light" ? Math.min(base.l, limit) : Math.max(base.l, limit),
     }),
+    "--accent-text": toHex({ ...tint(base), l: ACCENT_TEXT_LIGHTNESS[scheme] }),
     "--scrim": `${scrim}59`,
     "--scrim-strong": `${scrim}cc`,
   };
   for (const [name, l] of Object.entries(NEUTRALS[scheme]))
-    colours[name] = toHex({ l, c: neutralChroma, h: base.h });
+    colours[name] = toHex({ ...neutral, l });
   for (const [name, signal] of Object.entries(SIGNALS[scheme]))
     colours[name] = toHex({ ...signal, c: signal.c * signalScale });
   return colours;
+}
+
+/** The hue of a colour and a little of its chroma, for a grey of any lightness. */
+function tint({ c, h }: Oklch): Omit<Oklch, "l"> {
+  return { c: Math.min(c, 0.15) * 0.08, h };
 }
 
 function clamp(value: number, min: number, max: number) {

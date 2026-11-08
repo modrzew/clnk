@@ -4,6 +4,7 @@
   border-radius: 8px;
   background: var(--danger-bg);
   color: var(--danger);
+  text-shadow: none;
   font-size: 14px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

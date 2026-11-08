@@ -58,6 +58,7 @@
   margin: 6px 0 2px 16px;
   border-radius: 8px;
   background: var(--code-bg);
+  text-shadow: none;
   overflow: hidden;
 }
 

@@ -108,6 +108,7 @@
   border: 1px solid var(--accent);
   border-radius: var(--radius);
   background: var(--bg-raised);
+  text-shadow: none;
 }
 
 .editBox textarea {
@@ -160,6 +161,7 @@
   padding: 10px 14px;
   border-radius: var(--radius);
   background: var(--bg-user);
+  text-shadow: none;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -195,6 +197,7 @@
   padding: 10px 14px;
   border-radius: 8px;
   background: var(--code-bg);
+  text-shadow: none;
   font-size: 14px;
   color: var(--text-muted);
 }
