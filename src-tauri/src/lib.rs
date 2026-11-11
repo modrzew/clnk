@@ -1,9 +1,23 @@
 #[cfg(target_os = "macos")]
 use tauri::Manager;
 
-/// The "waifu" app icon, the setting's alternative to the bundle's own.
+/// The app's own icon, for when it has no bundle to take it from.
+#[cfg(target_os = "macos")]
+const DEFAULT_ICON: &[u8] = include_bytes!("../icons/icon.png");
+
+/// The setting's alternative to it.
 #[cfg(target_os = "macos")]
 const WAIFU_ICON: &[u8] = include_bytes!("../icons/waifu.png");
+
+/// Whether this is the app inside its bundle, which has the icon. `tauri dev` runs the bare executable,
+/// and the Dock shows macOS's generic one for that.
+#[cfg(target_os = "macos")]
+fn is_bundled() -> bool {
+    std::env::current_exe().is_ok_and(|exe| {
+        exe.ancestors()
+            .any(|dir| dir.extension().is_some_and(|ext| ext == "app"))
+    })
+}
 
 /// Puts the icon on the Dock. Only that: the bundle's icon in Finder and Launchpad can't change while the
 /// app runs, and the Dock goes back to it when the app quits, so the page sets it again at every start.
@@ -14,19 +28,19 @@ fn set_app_icon(app: tauri::AppHandle, icon: &str) -> Result<(), String> {
     use objc2_app_kit::{NSApplication, NSImage};
     use objc2_foundation::NSData;
 
-    let waifu = match icon {
-        "default" => false,
-        "waifu" => true,
+    let image: Option<&[u8]> = match icon {
+        "waifu" => Some(WAIFU_ICON),
+        // Without an image, the Dock shows the bundle's icon.
+        "default" if is_bundled() => None,
+        "default" => Some(DEFAULT_ICON),
         _ => return Err(format!("unknown app icon: {icon}")),
     };
     app.run_on_main_thread(move || {
         let Some(mtm) = MainThreadMarker::new() else {
             return;
         };
-        // Without an image, the Dock shows the bundle's icon again.
-        let image = waifu
-            .then(|| NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(WAIFU_ICON)))
-            .flatten();
+        let image = image
+            .and_then(|bytes| NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(bytes)));
         // SAFETY: Passing no image is how to go back to the bundle's icon.
         unsafe { NSApplication::sharedApplication(mtm).setApplicationIconImage(image.as_deref()) };
     })

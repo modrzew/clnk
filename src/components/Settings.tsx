@@ -1,6 +1,5 @@
 import { type FormEvent, type KeyboardEvent, useId, useState } from "react";
 import {
-  LuAppWindow,
   LuBell,
   LuListCollapse,
   LuPalette,
@@ -37,14 +36,12 @@ const SECTIONS = (
     { id: "mcp", label: "MCP servers", Icon: LuPlug },
     { id: "notifications", label: "Notifications", Icon: LuBell },
     { id: "appearance", label: "Appearance", Icon: LuPalette },
-    { id: "icon", label: "App icon", Icon: LuAppWindow },
     { id: "display", label: "Display", Icon: LuListCollapse },
   ] as const
 ).filter(
-  // Left out where there's nothing to set, e.g. notifications in the Android app, or the icon in a browser.
+  // Left out where there are none to show, e.g. in the Android app.
   (section) =>
-    (section.id !== "notifications" || notificationSupport !== "unsupported") &&
-    (section.id !== "icon" || appIconSupport !== "unsupported"),
+    section.id !== "notifications" || notificationSupport !== "unsupported",
 );
 
 type Section = (typeof SECTIONS)[number]["id"];
@@ -149,7 +146,6 @@ export function Settings({
           )}
           {section === "notifications" && <NotificationSettings />}
           {section === "appearance" && <AppearanceSettings />}
-          {section === "icon" && <AppIconSettings />}
           {section === "display" && <DisplaySettings />}
         </section>
       </div>
@@ -159,10 +155,18 @@ export function Settings({
 
 function AppearanceSettings() {
   const { theme, accent } = useSettings();
+  const icon = useAppIcon();
+  const iconHint =
+    appIconSupport === "android"
+      ? "On the home screen and in the app drawer. Your launcher may take a moment to update."
+      : "Shown in the Dock. Finder and Launchpad keep the default.";
 
   return (
     <>
-      <p className={styles.text}>The same on all your devices.</p>
+      <p className={styles.text}>
+        The same on all your devices
+        {appIconSupport !== "unsupported" && ", except the app icon"}.
+      </p>
       <div className={styles.settings}>
         <label className={styles.setting}>
           <span className={styles.settingText}>
@@ -204,37 +208,25 @@ function AppearanceSettings() {
             />
           </span>
         </div>
+        {appIconSupport !== "unsupported" && (
+          <label className={styles.setting}>
+            <span className={styles.settingText}>
+              <span className={styles.settingLabel}>App icon</span>
+              <span className={styles.settingHint}>{iconHint}</span>
+            </span>
+            <select
+              value={icon}
+              onChange={(event) => setAppIcon(event.target.value as AppIcon)}
+            >
+              {APP_ICONS.map(({ icon, label }) => (
+                <option key={icon} value={icon}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
-    </>
-  );
-}
-
-function AppIconSettings() {
-  const icon = useAppIcon();
-  const hint =
-    appIconSupport === "android"
-      ? "On the home screen and in the app drawer. Your launcher may take a moment to update."
-      : "Shown in the Dock. Finder and Launchpad keep the default.";
-
-  return (
-    <>
-      <p className={styles.text}>Saved on this device.</p>
-      <label className={styles.setting}>
-        <span className={styles.settingText}>
-          <span className={styles.settingLabel}>Icon</span>
-          <span className={styles.settingHint}>{hint}</span>
-        </span>
-        <select
-          value={icon}
-          onChange={(event) => setAppIcon(event.target.value as AppIcon)}
-        >
-          {APP_ICONS.map(({ icon, label }) => (
-            <option key={icon} value={icon}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
     </>
   );
 }
