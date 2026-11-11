@@ -1,6 +1,7 @@
 package dev.hotarubi.clnk
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -43,6 +44,7 @@ class MainActivity : TauriActivity() {
 
   override fun onWebViewCreate(webView: WebView) {
     webView.addJavascriptInterface(SystemBars(), "clnkSystemBars")
+    webView.addJavascriptInterface(AppIcon(), "clnkAppIcon")
   }
 
   // The system bars are outside the page, and its theme needn't be the system's. The page calls this so
@@ -59,5 +61,32 @@ class MainActivity : TauriActivity() {
         }
       }
     }
+  }
+
+  // The launcher entries are the activity aliases in AndroidManifest.xml, one per icon, and the launcher
+  // shows the enabled one. The page calls this with its icon setting on every start, so it also puts
+  // things right if they ever differ. R8 keeps it by a rule in proguard-rules.pro.
+  inner class AppIcon {
+    @JavascriptInterface
+    fun set(icon: String) {
+      val chosen = ICON_ALIASES[icon] ?: return
+      // The new one first, so there's never a moment without a launcher entry.
+      setAliasEnabled(chosen, true)
+      for (other in ICON_ALIASES.values) if (other != chosen) setAliasEnabled(other, false)
+    }
+  }
+
+  private fun setAliasEnabled(alias: String, enabled: Boolean) {
+    packageManager.setComponentEnabledSetting(
+      ComponentName(this, "dev.hotarubi.clnk.$alias"),
+      if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+      else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+      PackageManager.DONT_KILL_APP,
+    )
+  }
+
+  private companion object {
+    // The values of the app icon setting, and their aliases in the manifest.
+    val ICON_ALIASES = mapOf("default" to "DefaultIcon", "waifu" to "WaifuIcon")
   }
 }

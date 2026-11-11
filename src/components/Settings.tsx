@@ -7,6 +7,13 @@ import {
   LuUserRound,
 } from "react-icons/lu";
 import type { ExpandMode, Theme, UserInfo } from "../../shared/protocol";
+import {
+  APP_ICONS,
+  type AppIcon,
+  appIconSupport,
+  setAppIcon,
+  useAppIcon,
+} from "../lib/appIcon";
 import type { BackendClient } from "../lib/client";
 import {
   notificationSupport,
@@ -148,10 +155,18 @@ export function Settings({
 
 function AppearanceSettings() {
   const { theme, accent } = useSettings();
+  const icon = useAppIcon();
+  const iconHint =
+    appIconSupport === "android"
+      ? "On the home screen and in the app drawer. Your launcher may take a moment to update."
+      : "Shown in the Dock. Finder and Launchpad keep the default.";
 
   return (
     <>
-      <p className={styles.text}>The same on all your devices.</p>
+      <p className={styles.text}>
+        The same on all your devices
+        {appIconSupport !== "unsupported" && ", except the app icon"}.
+      </p>
       <div className={styles.settings}>
         <label className={styles.setting}>
           <span className={styles.settingText}>
@@ -193,6 +208,24 @@ function AppearanceSettings() {
             />
           </span>
         </div>
+        {appIconSupport !== "unsupported" && (
+          <label className={styles.setting}>
+            <span className={styles.settingText}>
+              <span className={styles.settingLabel}>App icon</span>
+              <span className={styles.settingHint}>{iconHint}</span>
+            </span>
+            <select
+              value={icon}
+              onChange={(event) => setAppIcon(event.target.value as AppIcon)}
+            >
+              {APP_ICONS.map(({ icon, label }) => (
+                <option key={icon} value={icon}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
     </>
   );

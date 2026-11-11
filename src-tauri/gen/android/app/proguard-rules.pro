@@ -11,6 +11,9 @@
 -keepclassmembers class dev.hotarubi.clnk.MainActivity$SystemBars {
    @android.webkit.JavascriptInterface public <methods>;
 }
+-keepclassmembers class dev.hotarubi.clnk.MainActivity$AppIcon {
+   @android.webkit.JavascriptInterface public <methods>;
+}
 
 # Uncomment this to preserve the line number information for
 # debugging stack traces.
