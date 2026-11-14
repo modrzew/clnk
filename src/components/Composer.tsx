@@ -1,16 +1,18 @@
 import {
   type ClipboardEvent,
-  type DragEvent,
   type FormEvent,
   type KeyboardEvent,
   memo,
   type ReactNode,
+  type RefObject,
   useCallback,
+  useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
-import { LuFile, LuPaperclip, LuSquare, LuX } from "react-icons/lu";
+import { LuFile, LuPaperclip, LuSquare, LuUpload, LuX } from "react-icons/lu";
 import { MAX_REQUEST_BYTES } from "../../shared/protocol";
 import { cx } from "../lib/cx";
 import { formatSize } from "../lib/format";
@@ -33,6 +35,8 @@ interface ComposerProps {
   seesImages?: boolean;
   /** Shown below the input, e.g. the model picker. */
   children?: ReactNode;
+  /** Where dropping files attaches them, e.g. the whole chat. Defaults to the composer itself. */
+  dropArea?: RefObject<HTMLElement | null>;
 }
 
 interface PendingFile {
@@ -56,6 +60,7 @@ export function Composer({
   autoFocus,
   seesImages,
   children,
+  dropArea,
 }: ComposerProps) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<PendingFile[]>([]);
@@ -63,6 +68,7 @@ export function Composer({
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -109,23 +115,34 @@ export function Composer({
     attach(pasted);
   }
 
-  const dropProps = {
-    onDragOver: (event: DragEvent) => {
-      if (!event.dataTransfer.types.includes("Files")) return;
+  const onDrop = useEffectEvent(attach);
+  useEffect(() => {
+    const area = dropArea ? dropArea.current : formRef.current;
+    if (!area) return;
+    const over = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes("Files")) return;
       event.preventDefault();
       setDragging(true);
-    },
-    onDragLeave: (event: DragEvent) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+    };
+    const leave = (event: DragEvent) => {
+      if (!area.contains(event.relatedTarget as Node | null))
         setDragging(false);
-    },
-    onDrop: (event: DragEvent) => {
+    };
+    const drop = (event: DragEvent) => {
       setDragging(false);
-      if (!event.dataTransfer.files.length) return;
+      if (!event.dataTransfer?.files.length) return;
       event.preventDefault();
-      attach(Array.from(event.dataTransfer.files));
-    },
-  };
+      onDrop(Array.from(event.dataTransfer.files));
+    };
+    area.addEventListener("dragover", over);
+    area.addEventListener("dragleave", leave);
+    area.addEventListener("drop", drop);
+    return () => {
+      area.removeEventListener("dragover", over);
+      area.removeEventListener("dragleave", leave);
+      area.removeEventListener("drop", drop);
+    };
+  }, [dropArea]);
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
@@ -180,9 +197,9 @@ export function Composer({
 
   return (
     <form
+      ref={formRef}
       className={styles.composer}
       onSubmit={(event) => void submit(event)}
-      {...dropProps}
     >
       {error && <ErrorMessage>{error}</ErrorMessage>}
       {seesImages === false &&
@@ -192,6 +209,12 @@ export function Composer({
           </div>
         )}
       <div className={cx(styles.box, dragging && styles.dragging)}>
+        {dragging && (
+          <div className={styles.dropPrompt}>
+            <LuUpload size={16} aria-hidden />
+            Drop files to attach them. They upload when you send.
+          </div>
+        )}
         {files.length > 0 && (
           <ul className={styles.files} aria-label="Attachments">
             {files.map((pending) => (

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { LuArchive, LuArchiveRestore } from "react-icons/lu";
 import type {
   ChatSummary,
@@ -42,6 +42,7 @@ export function ChatView({
 }: ChatViewProps) {
   const transcript = useTranscript(client, chatId);
   const [actionError, setActionError] = useState<string | null>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
   const running = chat?.status === "running";
   const archived = chat?.archived ?? false;
   const projectArchived = project?.archived ?? false;
@@ -83,7 +84,7 @@ export function ChatView({
   }
 
   return (
-    <>
+    <div ref={chatRef} className={styles.chat}>
       <Header
         title={chat?.title ?? ""}
         parent={
@@ -153,6 +154,7 @@ export function ChatView({
             running={running}
             autoFocus
             seesImages={model?.images}
+            dropArea={chatRef}
             onSend={(text, files) =>
               client.sendMessage(chatId, text, files).then(() => {})
             }
@@ -174,6 +176,6 @@ export function ChatView({
           </Composer>
         )}
       </ChatBackground>
-    </>
+    </div>
   );
 }
