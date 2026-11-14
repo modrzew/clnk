@@ -7,6 +7,7 @@
 }
 
 .box {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -25,6 +26,27 @@
 .box.dragging {
   border-style: dashed;
   background: var(--bg-hover);
+}
+
+/* Covers the input while files are dragged over the chat, saying what dropping them does. */
+.dropPrompt {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-radius: inherit;
+  background: var(--bg-hover);
+  font-size: 14px;
+  text-align: center;
+}
+
+.dropPrompt svg {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
 .row {
