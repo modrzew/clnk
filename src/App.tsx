@@ -20,6 +20,7 @@ import {
 } from "./lib/hooks";
 import { useChatNotifications } from "./lib/notifications";
 import { syncSettings } from "./lib/settings";
+import { useShareRouting } from "./lib/share";
 import { useUpdateCheck } from "./lib/updates";
 import styles from "./App.module.css";
 
@@ -113,6 +114,7 @@ function Shell({
   const models = useModels(client);
   const route = useRoute();
   useChatNotifications(client, route.name === "chat" ? route.chatId : null);
+  useShareRouting(chats, projects);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);

@@ -155,6 +155,7 @@ export function ChatView({
             autoFocus
             seesImages={model?.images}
             dropArea={chatRef}
+            shareTarget={{ name: "chat", chatId }}
             onSend={(text, files) =>
               client.sendMessage(chatId, text, files).then(() => {})
             }

@@ -19,7 +19,8 @@
             android:name=".MainActivity"
             android:exported="true" />
 
-        <!-- The launcher entries, one per app icon. MainActivity.AppIcon keeps exactly one of them enabled. -->
+        <!-- The launcher entries, one per app icon. MainActivity.AppIcon keeps exactly one of them enabled.
+             They're the share targets too, so the share sheet shows the chosen icon. -->
         <activity-alias
             android:name=".DefaultIcon"
             android:targetActivity=".MainActivity"
@@ -32,6 +33,12 @@
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity-alias>
         <activity-alias
             android:name=".WaifuIcon"
@@ -43,6 +50,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity-alias>
 
