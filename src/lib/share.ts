@@ -4,11 +4,11 @@ import {
   MAX_REQUEST_BYTES,
   type ProjectSummary,
 } from "../../shared/protocol";
-import { navigate, type Route, routeHref } from "./hooks";
+import { type Route, routeHref } from "./hooks";
 
 declare global {
   interface Window {
-    /** The Android app's MainActivity, which other apps share files and text to. */
+    /** The Android app's MainActivity, which other apps share files to. */
     clnkShare?: {
       /** What was shared since the last call, as a JSON array of `Received`. */
       take(): string;
@@ -23,27 +23,27 @@ declare global {
 interface Received {
   /** Whether it started the app, rather than reaching it while it ran. */
   launch: boolean;
-  text: string;
   /** Size is -1 when the other app doesn't say. */
   files: { id: string; name: string; type: string; size: number }[];
 }
 
-/** What another app shared to this one, for a composer to attach. */
+/** Files another app shared to this one, for a composer to attach. */
 export interface Share {
   files: File[];
-  text: string;
   /** Why some files aren't there. */
   errors: string[];
 }
 
 interface PendingShare extends Share {
   launch: boolean;
-  /** The page whose composer gets it, once the app picked one. */
-  target: Route | null;
+  /** The href of the page whose composer gets it, once the app picked one. */
+  target: string | null;
 }
 
 const listeners = new Set<() => void>();
 let pending: PendingShare | null = null;
+/** The href of the page whose composer has something in it: a message being written, or a share. */
+let draft: string | null = null;
 
 function setPending(share: PendingShare | null) {
   pending = share;
@@ -60,7 +60,7 @@ function usePendingShare(): PendingShare | null {
   );
 }
 
-/** Takes what was shared from the Android app. A second share before the first is attached joins it. */
+/** Takes what was shared to the Android app. A second share before the first is attached joins it. */
 async function takeShared() {
   const bridge = window.clnkShare;
   if (!bridge) return;
@@ -77,18 +77,11 @@ async function takeShared() {
         ? {
             ...pending,
             files: [...pending.files, ...files],
-            text: joinText(pending.text, received.text),
             errors: [...pending.errors, ...errors],
             // Picked again, in case the first one's page had no composer for it.
             target: null,
           }
-        : {
-            files,
-            text: received.text,
-            errors,
-            launch: received.launch,
-            target: null,
-          },
+        : { files, errors, launch: received.launch, target: null },
     );
   }
 }
@@ -129,10 +122,6 @@ function decodeBase64(base64: string) {
   return bytes;
 }
 
-function joinText(...parts: string[]): string {
-  return parts.filter((part) => part.trim()).join("\n\n");
-}
-
 if (window.clnkShare) {
   // From MainActivity, when something is shared while the page runs. What was shared while it was
   // loading, or that started the app, is waiting for the first take.
@@ -141,8 +130,9 @@ if (window.clnkShare) {
 }
 
 /**
- * Opens a page for what's shared to the app: a new chat if the share started the app, or else the most
- * recently updated chat that can take a message.
+ * Opens a page for what's shared to the app: the one with a draft, so the files join what the user is
+ * writing. Without one, a new chat if the share started the app, or else the most recently updated chat
+ * that can take a message.
  */
 export function useShareRouting(
   chats: ChatSummary[] | null,
@@ -151,27 +141,40 @@ export function useShareRouting(
   const share = usePendingShare();
   useEffect(() => {
     if (!share || share.target || pending !== share) return;
-    let target: Route = { name: "new" };
-    if (!share.launch) {
-      if (!chats || !projects) return;
-      const archivedProjects = new Set(
-        projects.filter((project) => project.archived).map(({ id }) => id),
-      );
-      const chat = chats.find(
-        (chat) =>
-          !chat.archived &&
-          !(chat.projectId && archivedProjects.has(chat.projectId)),
-      );
-      if (chat) target = { name: "chat", chatId: chat.id };
-    }
+    const target = pickTarget(share.launch, chats, projects);
+    if (!target) return;
     setPending({ ...share, target });
-    navigate(target);
+    window.location.hash = target;
   }, [share, chats, projects]);
 }
 
-/** Calls `receive` with what's shared to the app, when it's for the page at `target`. */
+/** The href of the page for a share, or undefined until the chats are known. */
+function pickTarget(
+  launch: boolean,
+  chats: ChatSummary[] | null,
+  projects: ProjectSummary[] | null,
+): string | undefined {
+  if (draft) return draft;
+  if (launch) return routeHref({ name: "new" });
+  if (!chats || !projects) return;
+  const archivedProjects = new Set(
+    projects.filter((project) => project.archived).map(({ id }) => id),
+  );
+  const chat = chats.find(
+    (chat) =>
+      !chat.archived &&
+      !(chat.projectId && archivedProjects.has(chat.projectId)),
+  );
+  return routeHref(chat ? { name: "chat", chatId: chat.id } : { name: "new" });
+}
+
+/**
+ * Calls `receive` with what's shared to the app, when it's for the page at `target`. While `hasDraft`,
+ * it's for that page whatever else is open.
+ */
 export function useReceiveShare(
   target: Route | undefined,
+  hasDraft: boolean,
   receive: (share: Share) => void,
 ) {
   const share = usePendingShare();
@@ -179,9 +182,15 @@ export function useReceiveShare(
   const onReceive = useEffectEvent(receive);
   useEffect(() => {
     // Also not twice, when the effect runs again before the store's change rendered.
-    if (!share?.target || routeHref(share.target) !== href || pending !== share)
-      return;
+    if (!share?.target || share.target !== href || pending !== share) return;
     setPending(null);
     onReceive(share);
   }, [share, href]);
+  useEffect(() => {
+    if (!href || !hasDraft) return;
+    draft = href;
+    return () => {
+      if (draft === href) draft = null;
+    };
+  }, [href, hasDraft]);
 }

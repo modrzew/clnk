@@ -39,7 +39,7 @@ interface ComposerProps {
   children?: ReactNode;
   /** Where dropping files attaches them, e.g. the whole chat. Defaults to the composer itself. */
   dropArea?: RefObject<HTMLElement | null>;
-  /** The page this is on, if what other apps share to this one can go there. */
+  /** The page this is on, if files other apps share to this one can go there. */
   shareTarget?: Route;
 }
 
@@ -149,16 +149,17 @@ export function Composer({
     };
   }, [dropArea]);
 
-  useReceiveShare(shareTarget, (share) => {
-    setText((current) =>
-      [current, share.text].filter((part) => part.trim()).join("\n\n"),
-    );
-    attach(share.files);
-    if (share.errors.length)
-      setError((current) =>
-        [current, ...share.errors].filter(Boolean).join(" "),
-      );
-  });
+  useReceiveShare(
+    shareTarget,
+    text.trim() !== "" || files.length > 0,
+    (share) => {
+      attach(share.files);
+      if (share.errors.length)
+        setError((current) =>
+          [current, ...share.errors].filter(Boolean).join(" "),
+        );
+    },
+  );
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();

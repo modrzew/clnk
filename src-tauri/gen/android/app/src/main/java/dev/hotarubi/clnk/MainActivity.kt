@@ -108,9 +108,9 @@ class MainActivity : TauriActivity() {
     )
   }
 
-  // What other apps share to this one, from the share sheet. It comes with the intent that starts the
-  // activity, or with a new one while it runs, and waits here for the page to take it.
-  private class Received(val launch: Boolean, val text: String, val files: List<Uri>)
+  // Files other apps share to this one, from the share sheet. They come with the intent that starts the
+  // activity, or with a new one while it runs, and wait here for the page to take them.
+  private class Received(val launch: Boolean, val files: List<Uri>)
 
   private val received = mutableListOf<Received>()
   // The files the page took, by ID, and the ones it's reading.
@@ -127,10 +127,9 @@ class MainActivity : TauriActivity() {
           ?.filterNotNull().orEmpty()
       else -> return
     }
-    // Links come as text, and some apps describe their files with it.
-    val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
-    if (files.isEmpty() && text.isBlank()) return
-    synchronized(received) { received.add(Received(launch, text, files)) }
+    // Files only. Text that comes with them, often the other app's caption, is left out.
+    if (files.isEmpty()) return
+    synchronized(received) { received.add(Received(launch, files)) }
     // A page that's still loading takes it once it starts.
     webView?.evaluateJavascript("dispatchEvent(new Event('clnkshare'))", null)
   }
@@ -139,7 +138,7 @@ class MainActivity : TauriActivity() {
   // base64 parts. They're read from the other app, which allows that for as long as this app's task runs.
   // R8 keeps it by a rule in proguard-rules.pro.
   inner class Share {
-    /** What was shared since the last call, as JSON: `[{launch, text, files: [{id, name, type, size}]}]`. */
+    /** What was shared since the last call, as JSON: `[{launch, files: [{id, name, type, size}]}]`. */
     @JavascriptInterface
     fun take(): String {
       val taken = synchronized(received) { received.toList().also { received.clear() } }
@@ -147,7 +146,6 @@ class MainActivity : TauriActivity() {
         taken.map { share ->
           JSONObject()
             .put("launch", share.launch)
-            .put("text", share.text)
             .put("files", JSONArray(share.files.map { describe(it) }))
         },
       ).toString()
