@@ -1,7 +1,7 @@
 import { type RefObject, useRef, useState } from "react";
 import type { ModelRef, ModelsResponse } from "../../shared/protocol";
 import type { BackendClient } from "../lib/client";
-import { type Models, navigate } from "../lib/hooks";
+import { type Models, navigate, type Route } from "../lib/hooks";
 import { modelKey } from "../lib/models";
 import { ChatBackground } from "./ChatBackground";
 import { Composer } from "./Composer";
@@ -29,7 +29,12 @@ export function NewChat({
         <div className={styles.newChat}>
           <h2>What should Pi do?</h2>
         </div>
-        <NewChatComposer client={client} models={models} dropArea={pageRef} />
+        <NewChatComposer
+          client={client}
+          models={models}
+          dropArea={pageRef}
+          shareTarget={{ name: "new" }}
+        />
       </ChatBackground>
     </div>
   );
@@ -42,12 +47,14 @@ export function NewChatComposer({
   projectId,
   placeholder,
   dropArea,
+  shareTarget,
 }: {
   client: BackendClient;
   models: Models;
   projectId?: string;
   placeholder?: string;
   dropArea?: RefObject<HTMLElement | null>;
+  shareTarget?: Route;
 }) {
   const [picked, setPicked] = useState<ModelRef | null>(null);
   const available = models.models?.models ?? [];
@@ -87,6 +94,7 @@ export function NewChatComposer({
         }
         onSend={start}
         dropArea={dropArea}
+        shareTarget={shareTarget}
       >
         {available.length > 0 && (
           <ModelSelect

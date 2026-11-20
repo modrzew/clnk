@@ -16,6 +16,8 @@ import { LuFile, LuPaperclip, LuSquare, LuUpload, LuX } from "react-icons/lu";
 import { MAX_REQUEST_BYTES } from "../../shared/protocol";
 import { cx } from "../lib/cx";
 import { formatSize } from "../lib/format";
+import type { Route } from "../lib/hooks";
+import { useReceiveShare } from "../lib/share";
 import styles from "./Composer.module.css";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
@@ -37,6 +39,8 @@ interface ComposerProps {
   children?: ReactNode;
   /** Where dropping files attaches them, e.g. the whole chat. Defaults to the composer itself. */
   dropArea?: RefObject<HTMLElement | null>;
+  /** The page this is on, if files other apps share to this one can go there. */
+  shareTarget?: Route;
 }
 
 interface PendingFile {
@@ -61,6 +65,7 @@ export function Composer({
   seesImages,
   children,
   dropArea,
+  shareTarget,
 }: ComposerProps) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<PendingFile[]>([]);
@@ -143,6 +148,18 @@ export function Composer({
       area.removeEventListener("drop", drop);
     };
   }, [dropArea]);
+
+  useReceiveShare(
+    shareTarget,
+    text.trim() !== "" || files.length > 0,
+    (share) => {
+      attach(share.files);
+      if (share.errors.length)
+        setError((current) =>
+          [current, ...share.errors].filter(Boolean).join(" "),
+        );
+    },
+  );
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();

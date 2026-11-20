@@ -19,7 +19,10 @@
             android:name=".MainActivity"
             android:exported="true" />
 
-        <!-- The launcher entries, one per app icon. MainActivity.AppIcon keeps exactly one of them enabled. -->
+        <!-- The launcher entries, one per app icon. MainActivity.AppIcon keeps exactly one of them enabled.
+             They're the share targets too, so the share sheet shows the chosen icon. They take files only,
+             told apart by type: links come as text/plain, like .txt files, so a single text/plain file
+             isn't taken either. Several at once are always files. -->
         <activity-alias
             android:name=".DefaultIcon"
             android:targetActivity=".MainActivity"
@@ -32,6 +35,26 @@
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="font/*" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="model/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
+                <data android:mimeType="text/tab-separated-values" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="text/x-markdown" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity-alias>
         <activity-alias
             android:name=".WaifuIcon"
@@ -43,6 +66,26 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="font/*" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="model/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
+                <data android:mimeType="text/tab-separated-values" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="text/x-markdown" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity-alias>
 
