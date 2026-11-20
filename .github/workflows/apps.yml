@@ -40,8 +40,9 @@ jobs:
           fi
 
       - uses: oven-sh/setup-bun@v2.2.0
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: stable
           targets: aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2.9.3
         with:
@@ -100,8 +101,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: stable
           targets: aarch64-linux-android
       - uses: Swatinem/rust-cache@v2.9.3
         with:
