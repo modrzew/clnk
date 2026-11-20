@@ -6,7 +6,7 @@ workflows:
     '.github/workflows/apps.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-java@v6.1.0'
-        - 'dtolnay/rust-toolchain@stable'
+        - 'dtolnay/rust-toolchain@master'
         - 'oven-sh/setup-bun@v2.2.0'
         - 'swatinem/rust-cache@v2.9.3'
     '.github/workflows/ci.yml':
@@ -51,9 +51,9 @@ dependencies:
         commit: 'sha1-f87e5991a6d7451dcb8d9637bfbc97413f497069'
         owner_id: 5429470
         repo_id: 288485773
-    'dtolnay/rust-toolchain@stable':
-        ref: 'stable'
-        commit: 'sha1-b725eda525362e7cf34af9a7243cac1e3f01a7ec'
+    'dtolnay/rust-toolchain@master':
+        ref: 'master'
+        commit: 'sha1-df2a88e9fe4098bad09cb42c3dec7187f15861fc'
         owner_id: 1940490
         repo_id: 260749683
     'oven-sh/setup-bun@v2.2.0':
